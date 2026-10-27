@@ -1,4 +1,4 @@
-import type { Context as HonoContext } from 'hono'
+import type { Context as HonoContext, HonoRequest } from 'hono'
 import type { ServerResponse } from 'node:http'
 import type { AddressInfo } from 'node:net'
 import type { AppFixture, Scenario } from './scenarios.js'
@@ -17,6 +17,8 @@ import { ACCOUNT, APPS, DSL_YAML, SESSIONS, WORKSPACES } from './scenarios.js'
 export type DifyMockOptions = {
   scenario?: Scenario
   port?: number
+  /** Device polls answered authorization_pending before the scenario's own answer applies. */
+  pendingPolls?: number
 }
 
 export type LastRequest = Readonly<{
@@ -46,6 +48,8 @@ export type DifyMock = {
   requestCount: number
   /** Runs before each device-token poll is answered: lets a test act while a resume waits. */
   onDeviceTokenPoll: (hook: () => void) => void
+  /** Make the next `count` device polls answer authorization_pending, on either token route. */
+  setPendingPolls: (count: number) => void
 }
 
 const TOKEN_RE = /^Bearer\s+dfo[ae]_[\w-]+$/
@@ -86,6 +90,65 @@ type MockErrorBody = { code: string; message: string; status: number; hint?: str
 
 function errorBody(code: string, message: string, status: number, hint?: string): MockErrorBody {
   return hint === undefined ? { code, message, status } : { code, message, status, hint }
+}
+
+const DEVICE_GRANT_TYPE = 'urn:ietf:params:oauth:grant-type:device_code'
+const DEVICE_CLIENT_ID = 'difyctl'
+const DEVICE_USER_CODE = 'ABCD-1234'
+const TOKEN_EXPIRES_IN = 7_776_000
+const LEGACY_HTML_404 =
+  '<html><head><title>404 Not Found</title></head><body><h1>404 Not Found</h1></body></html>'
+const LEGACY_TOKEN_ROUTE_SCENARIOS = new Set<Scenario>([
+  'legacy-token-route',
+  'legacy-token-route-html-404',
+])
+
+const NO_STORE_HEADERS = { 'Cache-Control': 'no-store' }
+const PENDING_CODE = 'authorization_pending'
+
+function consumePendingPoll(scenario: Scenario, state?: MockState): boolean {
+  if (scenario === 'device-pending') return true
+  if (!state || state.pendingPolls <= 0) return false
+  state.pendingPolls -= 1
+  return true
+}
+
+const DEVICE_POLL_ERRORS: Partial<Record<Scenario, { code: string; description: string }>> = {
+  denied: { code: 'access_denied', description: 'user rejected' },
+  expired: { code: 'expired_token', description: 'device_code expired' },
+  'slow-down': { code: 'slow_down', description: 'increase interval' },
+}
+
+function approvedDeviceGrant(scenario: Scenario) {
+  const workspaces = WORKSPACES.map((w) => ({ id: w.id, name: w.name, role: w.role }))
+  if (scenario === 'sso') {
+    return {
+      token: 'dfoe_test',
+      subject_type: 'external_sso',
+      subject_email: 'sso@dify.ai',
+      subject_issuer: 'https://issuer.example',
+      account: null,
+      workspaces: [],
+      default_workspace_id: null,
+      token_id: 'tok-sso-1',
+    }
+  }
+  const account = scenario === 'no-email' ? { id: ACCOUNT.id, email: '', name: '' } : ACCOUNT
+  return {
+    token: 'dfoa_test',
+    subject_type: 'account',
+    account,
+    workspaces,
+    default_workspace_id: ACCOUNT.current_workspace_id,
+    token_id: 'tok-1',
+  }
+}
+
+async function readTokenForm(req: HonoRequest): Promise<Record<string, string | undefined>> {
+  const contentType = req.header('Content-Type') ?? ''
+  if (contentType.includes('application/json'))
+    return (await req.json().catch(() => ({}))) as Record<string, string | undefined>
+  return (await req.parseBody()) as Record<string, string | undefined>
 }
 
 function errorResponse(code: string, message: string, status: number, hint?: string) {
@@ -266,6 +329,7 @@ export type MockState = {
   lastRequest: LastRequest | null
   requestCount: number
   beforeDeviceToken?: () => void
+  pendingPolls: number
 }
 
 async function readMultipartRunBody(
@@ -793,58 +857,71 @@ export function buildApp(getScenario: () => Scenario, state?: MockState): Hono {
         expires_in: 600,
         interval: 1,
       })
-    return c.json({
+    const verificationUri = `${new URL(c.req.url).origin}/device`
+    if (scenario === 'bad-verification-uri-complete')
+      return c.json({
+        device_code: 'devcode-1',
+        user_code: 'ABCD-1234',
+        verification_uri: verificationUri,
+        verification_uri_complete: BAD_VERIFICATION_URI,
+        expires_in: 600,
+        interval: 1,
+      })
+    const body = {
       device_code: 'devcode-1',
       user_code: 'ABCD-1234',
-      verification_uri: `${new URL(c.req.url).origin}/device`,
-      verification_uri_complete: `${new URL(c.req.url).origin}/device?user_code=ABCD-1234`,
+      verification_uri: verificationUri,
       expires_in: 600,
       interval: 1,
+    }
+    if (LEGACY_TOKEN_ROUTE_SCENARIOS.has(scenario)) return c.json(body)
+    return c.json({
+      ...body,
+      verification_uri_complete: `${verificationUri}?user_code=${encodeURIComponent(DEVICE_USER_CODE)}`,
     })
   })
 
   app.post('/openapi/v1/oauth/device/token', async (c) => {
     state?.beforeDeviceToken?.()
     const scenario = getScenario()
-    if (scenario === 'denied')
-      return c.json({ error: 'access_denied', error_description: 'user rejected' }, { status: 400 })
-    if (scenario === 'expired')
+    if (consumePendingPoll(scenario, state))
       return c.json(
-        { error: 'expired_token', error_description: 'device_code expired' },
+        { error: PENDING_CODE, error_description: 'authorization pending' },
         { status: 400 },
       )
-    if (scenario === 'slow-down')
-      return c.json({ error: 'slow_down', error_description: 'increase interval' }, { status: 400 })
-    if (scenario === 'sso') {
-      return c.json({
-        token: 'dfoe_test',
-        subject_type: 'external_sso',
-        subject_email: 'sso@dify.ai',
-        subject_issuer: 'https://issuer.example',
-        account: null,
-        workspaces: [],
-        default_workspace_id: null,
-        token_id: 'tok-sso-1',
-      })
+    const error = DEVICE_POLL_ERRORS[scenario]
+    if (error)
+      return c.json({ error: error.code, error_description: error.description }, { status: 400 })
+    return c.json(approvedDeviceGrant(scenario))
+  })
+
+  app.post('/openapi/v1/oauth/token', async (c) => {
+    state?.beforeDeviceToken?.()
+    const scenario = getScenario()
+    if (scenario === 'legacy-token-route')
+      return errorResponse(ServerErrorCode.NotFound, 'not found', 404)
+    if (scenario === 'legacy-token-route-html-404') return c.html(LEGACY_HTML_404, 404)
+    const form = await readTokenForm(c.req)
+    if (form.grant_type !== DEVICE_GRANT_TYPE)
+      return c.json({ error: 'unsupported_grant_type' }, { status: 400, headers: NO_STORE_HEADERS })
+    if (form.client_id !== undefined && form.client_id !== DEVICE_CLIENT_ID) {
+      return c.json(
+        { error: 'invalid_client' },
+        {
+          status: 401,
+          headers: { ...NO_STORE_HEADERS, 'WWW-Authenticate': 'Basic realm="dify-openapi"' },
+        },
+      )
     }
-    if (scenario === 'no-email') {
-      return c.json({
-        token: 'dfoa_test',
-        subject_type: 'account',
-        account: { id: ACCOUNT.id, email: '', name: '' },
-        workspaces: WORKSPACES.map((w) => ({ id: w.id, name: w.name, role: w.role })),
-        default_workspace_id: ACCOUNT.current_workspace_id,
-        token_id: 'tok-1',
-      })
-    }
-    return c.json({
-      token: 'dfoa_test',
-      subject_type: 'account',
-      account: ACCOUNT,
-      workspaces: WORKSPACES.map((w) => ({ id: w.id, name: w.name, role: w.role })),
-      default_workspace_id: ACCOUNT.current_workspace_id,
-      token_id: 'tok-1',
-    })
+    if (consumePendingPoll(scenario, state))
+      return c.json({ error: PENDING_CODE }, { status: 400, headers: NO_STORE_HEADERS })
+    const error = DEVICE_POLL_ERRORS[scenario]
+    if (error) return c.json({ error: error.code }, { status: 400, headers: NO_STORE_HEADERS })
+    const { token, ...extras } = approvedDeviceGrant(scenario)
+    return c.json(
+      { access_token: token, token_type: 'Bearer', expires_in: TOKEN_EXPIRES_IN, ...extras },
+      { headers: NO_STORE_HEADERS },
+    )
   })
 
   return app
@@ -859,6 +936,7 @@ export function startMock(opts: DifyMockOptions = {}): Promise<DifyMock> {
     lastImportBody: null,
     lastRequest: null,
     requestCount: 0,
+    pendingPolls: opts.pendingPolls ?? 0,
   }
   const app = buildApp(() => scenario, state)
   return new Promise((resolve, reject) => {
@@ -902,6 +980,9 @@ export function startMock(opts: DifyMockOptions = {}): Promise<DifyMock> {
         },
         onDeviceTokenPoll(hook) {
           state.beforeDeviceToken = hook
+        },
+        setPendingPolls(count) {
+          state.pendingPolls = count
         },
       })
     })

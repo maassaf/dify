@@ -286,6 +286,15 @@ export const zAppSettingsInfo = z.object({
 })
 
 /**
+ * AuthorizeErrorCode
+ */
+export const zAuthorizeErrorCode = z.enum([
+  'invalid_client',
+  'invalid_redirect_uri',
+  'invalid_request',
+])
+
+/**
  * ChatAppInfo
  */
 export const zChatAppInfo = z.object({
@@ -460,7 +469,7 @@ export const zDeploymentEdition = z.enum(['CLOUD', 'COMMUNITY', 'ENTERPRISE'])
  */
 export const zDeviceCodeRequest = z.object({
   client_id: z.string(),
-  device_label: z.string(),
+  device_label: z.string().nullish(),
 })
 
 /**
@@ -472,6 +481,7 @@ export const zDeviceCodeResponse = z.object({
   interval: z.int(),
   user_code: z.string(),
   verification_uri: z.string(),
+  verification_uri_complete: z.string(),
 })
 
 /**
@@ -1409,6 +1419,61 @@ export const zNodeTypeListResponse = z.object({
 })
 
 /**
+ * OAuthAuthorizeClientQuery
+ */
+export const zOAuthAuthorizeClientQuery = z.object({
+  client_id: z.string(),
+  redirect_uri: z.string(),
+})
+
+/**
+ * OAuthAuthorizeClientResponse
+ */
+export const zOAuthAuthorizeClientResponse = z.object({
+  client_id: z.string(),
+  display_name: z.string(),
+  localhost_only: z.boolean(),
+  logo_uri: z.string().nullish(),
+  redirect_host: z.string(),
+})
+
+/**
+ * OAuthAuthorizeErrorResponse
+ */
+export const zOAuthAuthorizeErrorResponse = z.object({
+  error: zAuthorizeErrorCode,
+})
+
+/**
+ * OAuthAuthorizeRedirectResponse
+ *
+ * Where the consent page navigates next; the server builds it.
+ */
+export const zOAuthAuthorizeRedirectResponse = z.object({
+  redirect_to: z.string(),
+})
+
+/**
+ * OAuthAuthorizeRequest
+ */
+export const zOAuthAuthorizeRequest = z.object({
+  client_id: z.string(),
+  code_challenge: z.string(),
+  code_challenge_method: z.string(),
+  redirect_uri: z.string(),
+  resource: z.string().nullish(),
+  scope: z.string().nullish(),
+  state: z.string().nullish(),
+})
+
+/**
+ * OAuthTokenErrorResponse
+ */
+export const zOAuthTokenErrorResponse = z.object({
+  error: z.string(),
+})
+
+/**
  * OpenApiErrorCode
  */
 export const zOpenApiErrorCode = z.enum([
@@ -1709,6 +1774,21 @@ export const zPublishResponse = z.object({
 })
 
 /**
+ * RegistrationErrorCode
+ *
+ * RFC 7591 client registration error codes.
+ */
+export const zRegistrationErrorCode = z.enum(['invalid_client_metadata', 'invalid_redirect_uri'])
+
+/**
+ * OAuthRegisterErrorResponse
+ */
+export const zOAuthRegisterErrorResponse = z.object({
+  error: zRegistrationErrorCode,
+  error_description: z.string(),
+})
+
+/**
  * ReleaseCheckName
  */
 export const zReleaseCheckName = z.enum(['draft_valid', 'tested'])
@@ -1903,6 +1983,45 @@ export const zPermittedExternalAppsListQuery = z.object({
  */
 export const zTaskStopResponse = z.object({
   result: z.literal('success'),
+})
+
+/**
+ * TokenEndpointAuthMethod
+ */
+export const zTokenEndpointAuthMethod = z.enum([
+  'client_secret_basic',
+  'client_secret_post',
+  'none',
+])
+
+/**
+ * OAuthRegisterRequest
+ *
+ * RFC 7591 client metadata; unknown fields are ignored.
+ */
+export const zOAuthRegisterRequest = z.object({
+  client_name: z.string().max(255).nullish(),
+  grant_types: z.array(z.enum(['authorization_code', 'refresh_token'])).nullish(),
+  logo_uri: z.string().max(1024).nullish(),
+  redirect_uris: z.array(z.string().max(2048)).max(10),
+  response_types: z.array(z.literal('code')).nullish(),
+  token_endpoint_auth_method: zTokenEndpointAuthMethod.nullish(),
+})
+
+/**
+ * OAuthRegisterResponse
+ */
+export const zOAuthRegisterResponse = z.object({
+  client_id: z.string(),
+  client_id_issued_at: z.int(),
+  client_name: z.string(),
+  client_secret: z.string().nullish(),
+  client_secret_expires_at: z.int().nullish(),
+  grant_types: z.array(z.enum(['authorization_code', 'refresh_token'])),
+  logo_uri: z.string().nullish(),
+  redirect_uris: z.array(z.string()),
+  response_types: z.array(z.literal('code')),
+  token_endpoint_auth_method: zTokenEndpointAuthMethod,
 })
 
 /**
@@ -2397,6 +2516,23 @@ export const zDeviceTokenResponse = z.object({
   subject_type: zSubjectType,
   token: z.string(),
   token_id: z.string(),
+  workspaces: z.array(zWorkspacePayload).optional().default([]),
+})
+
+/**
+ * OAuthTokenResponse
+ */
+export const zOAuthTokenResponse = z.object({
+  access_token: z.string(),
+  account: zAccountPayload.nullish(),
+  default_workspace_id: z.string().nullish(),
+  expires_in: z.int(),
+  refresh_token: z.string().nullish(),
+  subject_email: z.string().nullish(),
+  subject_issuer: z.string().nullish(),
+  subject_type: zSubjectType,
+  token_id: z.string(),
+  token_type: z.string(),
   workspaces: z.array(zWorkspacePayload).optional().default([]),
 })
 
@@ -3129,6 +3265,30 @@ export const zGetNodeTypesByNodeTypePath = z.object({
  */
 export const zGetNodeTypesByNodeTypeResponse = zNodeTypeDetailResponse
 
+export const zPostOauthAuthorizeApproveBody = zOAuthAuthorizeRequest
+
+/**
+ * Client redirect with a code, or with an error for a bad PKCE or resource value
+ */
+export const zPostOauthAuthorizeApproveResponse = zOAuthAuthorizeRedirectResponse
+
+export const zGetOauthAuthorizeClientQuery = z.object({
+  client_id: z.string(),
+  redirect_uri: z.string(),
+})
+
+/**
+ * Client to show
+ */
+export const zGetOauthAuthorizeClientResponse = zOAuthAuthorizeClientResponse
+
+export const zPostOauthAuthorizeDenyBody = zOAuthAuthorizeRequest
+
+/**
+ * Client redirect with access_denied
+ */
+export const zPostOauthAuthorizeDenyResponse = zOAuthAuthorizeRedirectResponse
+
 export const zPostOauthDeviceApproveBody = zDeviceMutateRequest
 
 /**
@@ -3165,6 +3325,23 @@ export const zPostOauthDeviceTokenBody = zDevicePollRequest
  * Device token
  */
 export const zPostOauthDeviceTokenResponse = zDeviceTokenResponse
+
+export const zPostOauthRegisterBody = zOAuthRegisterRequest
+
+/**
+ * Client registered
+ */
+export const zPostOauthRegisterResponse = zOAuthRegisterResponse
+
+/**
+ * Token revoked, or unknown to this client
+ */
+export const zPostOauthRevokeResponse = z.record(z.string(), z.unknown())
+
+/**
+ * Access token
+ */
+export const zPostOauthTokenResponse = zOAuthTokenResponse
 
 export const zGetPermittedExternalAppsQuery = z.object({
   limit: z.int().gte(1).lte(100).optional().default(20),

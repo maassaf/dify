@@ -1,7 +1,8 @@
 """Framework-neutral contracts shared by the OAuth device-flow use cases."""
 
+import secrets
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timedelta
 from enum import StrEnum
 from typing import NotRequired, Protocol, TypedDict
 
@@ -11,6 +12,21 @@ DEFAULT_POLL_INTERVAL_SECONDS = 5
 # PostgreSQL partial unique indexes treat NULLs as distinct. Account tokens use
 # a non-null issuer so the active-token uniqueness key remains stable.
 ACCOUNT_ISSUER_SENTINEL = "dify:account"
+
+DEVICE_LABEL_MAX_LENGTH = 255
+DEFAULT_LABEL_SUFFIX_BYTES = 3
+
+
+def default_device_label(client_name: str) -> str:
+    return f"{client_name} ({secrets.token_hex(DEFAULT_LABEL_SUFFIX_BYTES)})"[:DEVICE_LABEL_MAX_LENGTH]
+
+
+@dataclass(frozen=True, slots=True)
+class GrantKey:
+    subject_email: str
+    subject_issuer: str
+    client_id: str
+    device_label: str
 
 
 class DeviceFlowStatus(StrEnum):
@@ -49,6 +65,7 @@ class DeviceAuthorization:
     device_code: str
     user_code: str
     verification_uri: str
+    verification_uri_complete: str
     expires_in: int
     interval: int
 
@@ -78,6 +95,8 @@ class OAuthDeviceTokenRotation:
     token_id: str
     replaced_token_id: str | None
     replaced_token_hash: str | None
+    evicted_token_ids: tuple[str, ...] = ()
+    evicted_token_hashes: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -85,10 +104,37 @@ class IssuedOAuthToken:
     token: str
     expires_at: str
     rotation: OAuthDeviceTokenRotation
+    refresh_token: str | None = None
 
     @property
     def token_id(self) -> str:
         return self.rotation.token_id
+
+
+@dataclass(frozen=True, slots=True)
+class PresentedRefreshToken:
+    """A refresh token being exchanged. ``rotate_token`` spends it under the account lock."""
+
+    id: str
+    family_id: str
+    reuse_grace: timedelta
+
+
+@dataclass(frozen=True, slots=True)
+class RefreshTokenIssue:
+    """Asks for a refresh token with the access token: in a new family, or in the presented token's."""
+
+    lifetime: timedelta
+    presented: PresentedRefreshToken | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class RefreshTokenWrite:
+    token_hash: str
+    family_id: str
+    workspace_id: str | None
+    expires_at: datetime
+    presented: PresentedRefreshToken | None
 
 
 @dataclass(frozen=True, slots=True)
@@ -101,6 +147,7 @@ class OAuthDeviceTokenWrite:
     prefix: str
     token_hash: str
     expires_at: datetime
+    refresh: RefreshTokenWrite | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -200,6 +247,10 @@ class AccessDeniedError(OAuthDeviceError):
     pass
 
 
+class ClientMismatchError(OAuthDeviceError):
+    pass
+
+
 class ExpiredOrUnknownError(OAuthDeviceError):
     pass
 
@@ -266,6 +317,14 @@ class ExternalIdentityConflictError(OAuthDeviceError):
 
 class ApprovalSessionConsumedError(OAuthDeviceError):
     pass
+
+
+class RefreshTokenRejectedError(Exception):
+    """The presented refresh token is gone (its grant was revoked) or expired."""
+
+
+class RefreshTokenReusedError(RefreshTokenRejectedError):
+    """The presented refresh token was rotated longer ago than the replay grace allows."""
 
 
 class StateNotFoundError(Exception):

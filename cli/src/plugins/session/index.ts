@@ -70,9 +70,9 @@ export const session = definePlugin({
   name: 'session',
   needs: [env, io],
   build: async (ctx): Promise<SessionService> => {
-    const { server, token: envToken, workspaceId: envWorkspaceId, configDir } = await ctx.get(env)
+    const { server, readToken, workspaceId: envWorkspaceId, configDir } = await ctx.get(env)
     // An env login is the pair: a server on its own only says where to log in.
-    const fromEnv = server !== undefined && envToken !== undefined
+    const fromEnv = server !== undefined && readToken !== undefined
     const file = localFile(
       join(configDir, LOGIN_FILE_NAME),
       LOGIN_SCHEMA,
@@ -109,7 +109,8 @@ export const session = definePlugin({
         if (fromEnv) {
           throw new BaseError({
             code: ErrorCode.UsageInvalidFlag,
-            message: 'cannot save a login while DIFY_SERVER/DIFY_TOKEN are set',
+            message:
+              'cannot save a login while DIFY_SERVER with DIFY_TOKEN or DIFY_TOKEN_FILE is set',
           })
         }
         await file.update(() => loginToDoc(login))

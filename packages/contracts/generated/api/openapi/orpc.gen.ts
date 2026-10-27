@@ -81,6 +81,8 @@ import {
   zGetNodeTypesByNodeTypePath,
   zGetNodeTypesByNodeTypeResponse,
   zGetNodeTypesResponse,
+  zGetOauthAuthorizeClientQuery,
+  zGetOauthAuthorizeClientResponse,
   zGetOauthDeviceLookupQuery,
   zGetOauthDeviceLookupResponse,
   zGetPermittedExternalAppsByAppIdPath,
@@ -230,6 +232,10 @@ import {
   zPostAppsByAppIdWorkflowRunBody,
   zPostAppsByAppIdWorkflowRunPath,
   zPostAppsByAppIdWorkflowRunResponse,
+  zPostOauthAuthorizeApproveBody,
+  zPostOauthAuthorizeApproveResponse,
+  zPostOauthAuthorizeDenyBody,
+  zPostOauthAuthorizeDenyResponse,
   zPostOauthDeviceApproveBody,
   zPostOauthDeviceApproveResponse,
   zPostOauthDeviceCodeBody,
@@ -238,6 +244,10 @@ import {
   zPostOauthDeviceDenyResponse,
   zPostOauthDeviceTokenBody,
   zPostOauthDeviceTokenResponse,
+  zPostOauthRegisterBody,
+  zPostOauthRegisterResponse,
+  zPostOauthRevokeResponse,
+  zPostOauthTokenResponse,
   zPostWorkspacesByWorkspaceIdAppsAdvancedChatBody,
   zPostWorkspacesByWorkspaceIdAppsAdvancedChatPath,
   zPostWorkspacesByWorkspaceIdAppsAdvancedChatResponse,
@@ -1522,6 +1532,57 @@ export const post16 = oc
   .route({
     inputStructure: 'detailed',
     method: 'POST',
+    operationId: 'postOauthAuthorizeApprove',
+    path: '/oauth/authorize/approve',
+    tags: ['openapi'],
+  })
+  .input(z.object({ body: zPostOauthAuthorizeApproveBody }))
+  .output(zPostOauthAuthorizeApproveResponse)
+
+export const approve = {
+  post: post16,
+}
+
+export const get36 = oc
+  .route({
+    inputStructure: 'detailed',
+    method: 'GET',
+    operationId: 'getOauthAuthorizeClient',
+    path: '/oauth/authorize/client',
+    tags: ['openapi'],
+  })
+  .input(z.object({ query: zGetOauthAuthorizeClientQuery }))
+  .output(zGetOauthAuthorizeClientResponse)
+
+export const client = {
+  get: get36,
+}
+
+export const post17 = oc
+  .route({
+    inputStructure: 'detailed',
+    method: 'POST',
+    operationId: 'postOauthAuthorizeDeny',
+    path: '/oauth/authorize/deny',
+    tags: ['openapi'],
+  })
+  .input(z.object({ body: zPostOauthAuthorizeDenyBody }))
+  .output(zPostOauthAuthorizeDenyResponse)
+
+export const deny = {
+  post: post17,
+}
+
+export const authorize = {
+  approve,
+  client,
+  deny,
+}
+
+export const post18 = oc
+  .route({
+    inputStructure: 'detailed',
+    method: 'POST',
     operationId: 'postOauthDeviceApprove',
     path: '/oauth/device/approve',
     tags: ['openapi'],
@@ -1529,11 +1590,11 @@ export const post16 = oc
   .input(z.object({ body: zPostOauthDeviceApproveBody }))
   .output(zPostOauthDeviceApproveResponse)
 
-export const approve = {
-  post: post16,
+export const approve2 = {
+  post: post18,
 }
 
-export const post17 = oc
+export const post19 = oc
   .route({
     inputStructure: 'detailed',
     method: 'POST',
@@ -1545,10 +1606,10 @@ export const post17 = oc
   .output(zPostOauthDeviceCodeResponse)
 
 export const code = {
-  post: post17,
+  post: post19,
 }
 
-export const post18 = oc
+export const post20 = oc
   .route({
     inputStructure: 'detailed',
     method: 'POST',
@@ -1559,11 +1620,11 @@ export const post18 = oc
   .input(z.object({ body: zPostOauthDeviceDenyBody }))
   .output(zPostOauthDeviceDenyResponse)
 
-export const deny = {
-  post: post18,
+export const deny2 = {
+  post: post20,
 }
 
-export const get36 = oc
+export const get37 = oc
   .route({
     inputStructure: 'detailed',
     method: 'GET',
@@ -1575,10 +1636,10 @@ export const get36 = oc
   .output(zGetOauthDeviceLookupResponse)
 
 export const lookup = {
-  get: get36,
+  get: get37,
 }
 
-export const post19 = oc
+export const post21 = oc
   .route({
     inputStructure: 'detailed',
     method: 'POST',
@@ -1590,22 +1651,70 @@ export const post19 = oc
   .output(zPostOauthDeviceTokenResponse)
 
 export const token = {
-  post: post19,
+  post: post21,
 }
 
 export const device = {
-  approve,
+  approve: approve2,
   code,
-  deny,
+  deny: deny2,
   lookup,
   token,
 }
 
-export const oauth = {
-  device,
+export const post22 = oc
+  .route({
+    inputStructure: 'detailed',
+    method: 'POST',
+    operationId: 'postOauthRegister',
+    path: '/oauth/register',
+    successStatus: 201,
+    tags: ['openapi'],
+  })
+  .input(z.object({ body: zPostOauthRegisterBody }))
+  .output(zPostOauthRegisterResponse)
+
+export const register = {
+  post: post22,
 }
 
-export const get37 = oc
+export const post23 = oc
+  .route({
+    inputStructure: 'detailed',
+    method: 'POST',
+    operationId: 'postOauthRevoke',
+    path: '/oauth/revoke',
+    tags: ['openapi'],
+  })
+  .output(zPostOauthRevokeResponse)
+
+export const revoke = {
+  post: post23,
+}
+
+export const post24 = oc
+  .route({
+    inputStructure: 'detailed',
+    method: 'POST',
+    operationId: 'postOauthToken',
+    path: '/oauth/token',
+    tags: ['openapi'],
+  })
+  .output(zPostOauthTokenResponse)
+
+export const token2 = {
+  post: post24,
+}
+
+export const oauth = {
+  authorize,
+  device,
+  register,
+  revoke,
+  token: token2,
+}
+
+export const get38 = oc
   .route({
     inputStructure: 'detailed',
     method: 'GET',
@@ -1622,10 +1731,10 @@ export const get37 = oc
   .output(zGetPermittedExternalAppsByAppIdResponse)
 
 export const byAppId2 = {
-  get: get37,
+  get: get38,
 }
 
-export const get38 = oc
+export const get39 = oc
   .route({
     inputStructure: 'detailed',
     method: 'GET',
@@ -1637,11 +1746,11 @@ export const get38 = oc
   .output(zGetPermittedExternalAppsResponse)
 
 export const permittedExternalApps = {
-  get: get38,
+  get: get39,
   byAppId: byAppId2,
 }
 
-export const post20 = oc
+export const post25 = oc
   .route({
     inputStructure: 'detailed',
     method: 'POST',
@@ -1659,10 +1768,10 @@ export const post20 = oc
   .output(zPostWorkspacesByWorkspaceIdAppsAdvancedChatResponse)
 
 export const advancedChat5 = {
-  post: post20,
+  post: post25,
 }
 
-export const post21 = oc
+export const post26 = oc
   .route({
     inputStructure: 'detailed',
     method: 'POST',
@@ -1674,14 +1783,14 @@ export const post21 = oc
   .output(zPostWorkspacesByWorkspaceIdAppsImportsByImportIdConfirmResponse)
 
 export const confirm = {
-  post: post21,
+  post: post26,
 }
 
 export const byImportId = {
   confirm,
 }
 
-export const post22 = oc
+export const post27 = oc
   .route({
     inputStructure: 'detailed',
     method: 'POST',
@@ -1698,10 +1807,10 @@ export const post22 = oc
   .output(zPostWorkspacesByWorkspaceIdAppsImportsCheckResponse)
 
 export const check3 = {
-  post: post22,
+  post: post27,
 }
 
-export const post23 = oc
+export const post28 = oc
   .route({
     inputStructure: 'detailed',
     method: 'POST',
@@ -1718,12 +1827,12 @@ export const post23 = oc
   .output(zPostWorkspacesByWorkspaceIdAppsImportsResponse)
 
 export const imports = {
-  post: post23,
+  post: post28,
   byImportId,
   check: check3,
 }
 
-export const post24 = oc
+export const post29 = oc
   .route({
     inputStructure: 'detailed',
     method: 'POST',
@@ -1741,7 +1850,7 @@ export const post24 = oc
   .output(zPostWorkspacesByWorkspaceIdAppsWorkflowResponse)
 
 export const workflow5 = {
-  post: post24,
+  post: post29,
 }
 
 export const apps2 = {
@@ -1750,7 +1859,7 @@ export const apps2 = {
   workflow: workflow5,
 }
 
-export const get39 = oc
+export const get40 = oc
   .route({
     inputStructure: 'detailed',
     method: 'GET',
@@ -1767,7 +1876,7 @@ export const get39 = oc
   .output(zGetWorkspacesByWorkspaceIdKnowledgeBasesResponse)
 
 export const knowledgeBases = {
-  get: get39,
+  get: get40,
 }
 
 /**
@@ -1775,7 +1884,7 @@ export const knowledgeBases = {
  *
  * Reads a bounded text portion of one entry, equivalent to difyctl fs cat. Content follows stable source order. When next_page_token is present, reuse it with the same path and consistency_class. total is not returned because this response is a bounded content stream, not a collection. Requires an OAuth account bearer with WORKSPACE_READ. Authentication and workspace scope are checked before request validation, and Agent Knowledge Base membership is revalidated for every call. A hidden or missing Agent Knowledge Base or entry uses the same 404 response. These operations are read-only and do not emit mutation audit events.
  */
-export const get40 = oc
+export const get41 = oc
   .route({
     description:
       'Reads a bounded text portion of one entry, equivalent to difyctl fs cat. Content follows stable source order. When next_page_token is present, reuse it with the same path and consistency_class. total is not returned because this response is a bounded content stream, not a collection. Requires an OAuth account bearer with WORKSPACE_READ. Authentication and workspace scope are checked before request validation, and Agent Knowledge Base membership is revalidated for every call. A hidden or missing Agent Knowledge Base or entry uses the same 404 response. These operations are read-only and do not emit mutation audit events.',
@@ -1795,7 +1904,7 @@ export const get40 = oc
   .output(zGetWorkspacesByWorkspaceIdKnowledgeFsKnowledgeSpacesByKnowledgeSpaceIdFsCatResponse)
 
 export const cat = {
-  get: get40,
+  get: get41,
 }
 
 /**
@@ -1803,7 +1912,7 @@ export const cat = {
  *
  * Performs a side-effect-free comparison, equivalent to difyctl fs diff. POST is used because this is a structured query and an optional semantic summary can consume model quota. Automatic retries are not safe when include_semantic_summary=true because each retry can consume quota again. Requires an OAuth account bearer with WORKSPACE_READ. Authentication and workspace scope are checked before request validation, and Agent Knowledge Base membership is revalidated for every call. A hidden or missing Agent Knowledge Base or entry uses the same 404 response. These operations are read-only and do not emit mutation audit events.
  */
-export const post25 = oc
+export const post30 = oc
   .route({
     description:
       'Performs a side-effect-free comparison, equivalent to difyctl fs diff. POST is used because this is a structured query and an optional semantic summary can consume model quota. Automatic retries are not safe when include_semantic_summary=true because each retry can consume quota again. Requires an OAuth account bearer with WORKSPACE_READ. Authentication and workspace scope are checked before request validation, and Agent Knowledge Base membership is revalidated for every call. A hidden or missing Agent Knowledge Base or entry uses the same 404 response. These operations are read-only and do not emit mutation audit events.',
@@ -1823,7 +1932,7 @@ export const post25 = oc
   .output(zPostWorkspacesByWorkspaceIdKnowledgeFsKnowledgeSpacesByKnowledgeSpaceIdFsDiffResponse)
 
 export const diff = {
-  post: post25,
+  post: post30,
 }
 
 /**
@@ -1831,7 +1940,7 @@ export const diff = {
  *
  * Searches entries beneath path by name, resource type, or an exact metadata key/value pair, equivalent to difyctl fs find. Results use the canonical, stable Agent Knowledge Base traversal order. The opaque next_page_token captures that order; reuse it with unchanged filters and consistency_class. total is intentionally omitted because tenant-aware visibility scans are bounded and an exact count can require an unbounded scan. Requires an OAuth account bearer with WORKSPACE_READ. Authentication and workspace scope are checked before request validation, and Agent Knowledge Base membership is revalidated for every call. A hidden or missing Agent Knowledge Base or entry uses the same 404 response. These operations are read-only and do not emit mutation audit events.
  */
-export const get41 = oc
+export const get42 = oc
   .route({
     description:
       'Searches entries beneath path by name, resource type, or an exact metadata key/value pair, equivalent to difyctl fs find. Results use the canonical, stable Agent Knowledge Base traversal order. The opaque next_page_token captures that order; reuse it with unchanged filters and consistency_class. total is intentionally omitted because tenant-aware visibility scans are bounded and an exact count can require an unbounded scan. Requires an OAuth account bearer with WORKSPACE_READ. Authentication and workspace scope are checked before request validation, and Agent Knowledge Base membership is revalidated for every call. A hidden or missing Agent Knowledge Base or entry uses the same 404 response. These operations are read-only and do not emit mutation audit events.',
@@ -1851,7 +1960,7 @@ export const get41 = oc
   .output(zGetWorkspacesByWorkspaceIdKnowledgeFsKnowledgeSpacesByKnowledgeSpaceIdFsFindResponse)
 
 export const find = {
-  get: get41,
+  get: get42,
 }
 
 /**
@@ -1859,7 +1968,7 @@ export const find = {
  *
  * Searches readable content beneath path, equivalent to difyctl fs grep. Matches follow canonical entry traversal order and source-offset order within each entry. Results use the canonical, stable Agent Knowledge Base traversal order. The opaque next_page_token captures that order; reuse it with unchanged filters and consistency_class. total is intentionally omitted because tenant-aware visibility scans are bounded and an exact count can require an unbounded scan. Requires an OAuth account bearer with WORKSPACE_READ. Authentication and workspace scope are checked before request validation, and Agent Knowledge Base membership is revalidated for every call. A hidden or missing Agent Knowledge Base or entry uses the same 404 response. These operations are read-only and do not emit mutation audit events.
  */
-export const get42 = oc
+export const get43 = oc
   .route({
     description:
       'Searches readable content beneath path, equivalent to difyctl fs grep. Matches follow canonical entry traversal order and source-offset order within each entry. Results use the canonical, stable Agent Knowledge Base traversal order. The opaque next_page_token captures that order; reuse it with unchanged filters and consistency_class. total is intentionally omitted because tenant-aware visibility scans are bounded and an exact count can require an unbounded scan. Requires an OAuth account bearer with WORKSPACE_READ. Authentication and workspace scope are checked before request validation, and Agent Knowledge Base membership is revalidated for every call. A hidden or missing Agent Knowledge Base or entry uses the same 404 response. These operations are read-only and do not emit mutation audit events.',
@@ -1879,7 +1988,7 @@ export const get42 = oc
   .output(zGetWorkspacesByWorkspaceIdKnowledgeFsKnowledgeSpacesByKnowledgeSpaceIdFsGrepResponse)
 
 export const grep = {
-  get: get42,
+  get: get43,
 }
 
 /**
@@ -1887,7 +1996,7 @@ export const grep = {
  *
  * Lists direct child entries under path, equivalent to difyctl fs ls. Results use the canonical, stable Agent Knowledge Base traversal order. The opaque next_page_token captures that order; reuse it with unchanged filters and consistency_class. total is intentionally omitted because tenant-aware visibility scans are bounded and an exact count can require an unbounded scan. Requires an OAuth account bearer with WORKSPACE_READ. Authentication and workspace scope are checked before request validation, and Agent Knowledge Base membership is revalidated for every call. A hidden or missing Agent Knowledge Base or entry uses the same 404 response. These operations are read-only and do not emit mutation audit events.
  */
-export const get43 = oc
+export const get44 = oc
   .route({
     description:
       'Lists direct child entries under path, equivalent to difyctl fs ls. Results use the canonical, stable Agent Knowledge Base traversal order. The opaque next_page_token captures that order; reuse it with unchanged filters and consistency_class. total is intentionally omitted because tenant-aware visibility scans are bounded and an exact count can require an unbounded scan. Requires an OAuth account bearer with WORKSPACE_READ. Authentication and workspace scope are checked before request validation, and Agent Knowledge Base membership is revalidated for every call. A hidden or missing Agent Knowledge Base or entry uses the same 404 response. These operations are read-only and do not emit mutation audit events.',
@@ -1907,7 +2016,7 @@ export const get43 = oc
   .output(zGetWorkspacesByWorkspaceIdKnowledgeFsKnowledgeSpacesByKnowledgeSpaceIdFsLsResponse)
 
 export const ls = {
-  get: get43,
+  get: get44,
 }
 
 /**
@@ -1915,7 +2024,7 @@ export const ls = {
  *
  * Returns stable metadata for one entry selected by canonical virtual path without reading content, equivalent to difyctl fs stat. Requires an OAuth account bearer with WORKSPACE_READ. Authentication and workspace scope are checked before request validation, and Agent Knowledge Base membership is revalidated for every call. A hidden or missing Agent Knowledge Base or entry uses the same 404 response. These operations are read-only and do not emit mutation audit events.
  */
-export const get44 = oc
+export const get45 = oc
   .route({
     description:
       'Returns stable metadata for one entry selected by canonical virtual path without reading content, equivalent to difyctl fs stat. Requires an OAuth account bearer with WORKSPACE_READ. Authentication and workspace scope are checked before request validation, and Agent Knowledge Base membership is revalidated for every call. A hidden or missing Agent Knowledge Base or entry uses the same 404 response. These operations are read-only and do not emit mutation audit events.',
@@ -1935,7 +2044,7 @@ export const get44 = oc
   .output(zGetWorkspacesByWorkspaceIdKnowledgeFsKnowledgeSpacesByKnowledgeSpaceIdFsStatResponse)
 
 export const stat = {
-  get: get44,
+  get: get45,
 }
 
 /**
@@ -1943,7 +2052,7 @@ export const stat = {
  *
  * Returns a depth- and page-size-bounded tree rooted at path, equivalent to difyctl fs tree. Results use the canonical, stable Agent Knowledge Base traversal order. The opaque next_page_token captures that order; reuse it with unchanged filters and consistency_class. total is intentionally omitted because tenant-aware visibility scans are bounded and an exact count can require an unbounded scan. Requires an OAuth account bearer with WORKSPACE_READ. Authentication and workspace scope are checked before request validation, and Agent Knowledge Base membership is revalidated for every call. A hidden or missing Agent Knowledge Base or entry uses the same 404 response. These operations are read-only and do not emit mutation audit events.
  */
-export const get45 = oc
+export const get46 = oc
   .route({
     description:
       'Returns a depth- and page-size-bounded tree rooted at path, equivalent to difyctl fs tree. Results use the canonical, stable Agent Knowledge Base traversal order. The opaque next_page_token captures that order; reuse it with unchanged filters and consistency_class. total is intentionally omitted because tenant-aware visibility scans are bounded and an exact count can require an unbounded scan. Requires an OAuth account bearer with WORKSPACE_READ. Authentication and workspace scope are checked before request validation, and Agent Knowledge Base membership is revalidated for every call. A hidden or missing Agent Knowledge Base or entry uses the same 404 response. These operations are read-only and do not emit mutation audit events.',
@@ -1963,7 +2072,7 @@ export const get45 = oc
   .output(zGetWorkspacesByWorkspaceIdKnowledgeFsKnowledgeSpacesByKnowledgeSpaceIdFsTreeResponse)
 
 export const tree = {
-  get: get45,
+  get: get46,
 }
 
 export const fs = {
@@ -1988,7 +2097,7 @@ export const knowledgeFs = {
   knowledgeSpaces,
 }
 
-export const get46 = oc
+export const get47 = oc
   .route({
     inputStructure: 'detailed',
     method: 'GET',
@@ -2005,7 +2114,7 @@ export const get46 = oc
   .output(zGetWorkspacesByWorkspaceIdMarketplacePluginsResponse)
 
 export const plugins = {
-  get: get46,
+  get: get47,
 }
 
 export const marketplace = {
@@ -2044,7 +2153,7 @@ export const byMemberId = {
   patch: patch15,
 }
 
-export const get47 = oc
+export const get48 = oc
   .route({
     inputStructure: 'detailed',
     method: 'GET',
@@ -2060,7 +2169,7 @@ export const get47 = oc
   )
   .output(zGetWorkspacesByWorkspaceIdMembersResponse)
 
-export const post26 = oc
+export const post31 = oc
   .route({
     inputStructure: 'detailed',
     method: 'POST',
@@ -2078,8 +2187,8 @@ export const post26 = oc
   .output(zPostWorkspacesByWorkspaceIdMembersResponse)
 
 export const members = {
-  get: get47,
-  post: post26,
+  get: get48,
+  post: post31,
   byMemberId,
 }
 
@@ -2103,7 +2212,7 @@ export const byCredentialId = {
   patch: patch16,
 }
 
-export const post27 = oc
+export const post32 = oc
   .route({
     inputStructure: 'detailed',
     method: 'POST',
@@ -2121,7 +2230,7 @@ export const post27 = oc
   .output(zPostWorkspacesByWorkspaceIdModelProvidersByProviderCredentialsResponse)
 
 export const credentials = {
-  post: post27,
+  post: post32,
   byCredentialId,
 }
 
@@ -2149,7 +2258,7 @@ export const byCredentialId2 = {
   patch: patch17,
 }
 
-export const post28 = oc
+export const post33 = oc
   .route({
     inputStructure: 'detailed',
     method: 'POST',
@@ -2167,7 +2276,7 @@ export const post28 = oc
   .output(zPostWorkspacesByWorkspaceIdModelProvidersByProviderModelsCredentialsResponse)
 
 export const credentials2 = {
-  post: post28,
+  post: post33,
   byCredentialId: byCredentialId2,
 }
 
@@ -2175,7 +2284,7 @@ export const models = {
   credentials: credentials2,
 }
 
-export const get48 = oc
+export const get49 = oc
   .route({
     inputStructure: 'detailed',
     method: 'GET',
@@ -2187,7 +2296,7 @@ export const get48 = oc
   .output(zGetWorkspacesByWorkspaceIdModelProvidersByProviderResponse)
 
 export const byProvider = {
-  get: get48,
+  get: get49,
   credentials,
   models,
 }
@@ -2196,7 +2305,7 @@ export const modelProviders = {
   byProvider,
 }
 
-export const get49 = oc
+export const get50 = oc
   .route({
     inputStructure: 'detailed',
     method: 'GET',
@@ -2213,10 +2322,10 @@ export const get49 = oc
   .output(zGetWorkspacesByWorkspaceIdModelsResponse)
 
 export const models2 = {
-  get: get49,
+  get: get50,
 }
 
-export const get50 = oc
+export const get51 = oc
   .route({
     inputStructure: 'detailed',
     method: 'GET',
@@ -2228,7 +2337,7 @@ export const get50 = oc
   .output(zGetWorkspacesByWorkspaceIdPluginTasksByTaskIdResponse)
 
 export const byTaskId2 = {
-  get: get50,
+  get: get51,
 }
 
 export const pluginTasks = {
@@ -2250,7 +2359,7 @@ export const byPluginId = {
   delete: delete5,
 }
 
-export const post29 = oc
+export const post34 = oc
   .route({
     inputStructure: 'detailed',
     method: 'POST',
@@ -2267,10 +2376,10 @@ export const post29 = oc
   .output(zPostWorkspacesByWorkspaceIdPluginsInstallResponse)
 
 export const install = {
-  post: post29,
+  post: post34,
 }
 
-export const get51 = oc
+export const get52 = oc
   .route({
     inputStructure: 'detailed',
     method: 'GET',
@@ -2287,7 +2396,7 @@ export const get51 = oc
   .output(zGetWorkspacesByWorkspaceIdPluginsResponse)
 
 export const plugins2 = {
-  get: get51,
+  get: get52,
   byPluginId,
   install,
 }
@@ -2312,7 +2421,7 @@ export const byCredentialId3 = {
   patch: patch18,
 }
 
-export const post30 = oc
+export const post35 = oc
   .route({
     inputStructure: 'detailed',
     method: 'POST',
@@ -2330,11 +2439,11 @@ export const post30 = oc
   .output(zPostWorkspacesByWorkspaceIdToolProvidersByProviderCredentialsResponse)
 
 export const credentials3 = {
-  post: post30,
+  post: post35,
   byCredentialId: byCredentialId3,
 }
 
-export const get52 = oc
+export const get53 = oc
   .route({
     inputStructure: 'detailed',
     method: 'GET',
@@ -2346,7 +2455,7 @@ export const get52 = oc
   .output(zGetWorkspacesByWorkspaceIdToolProvidersByProviderResponse)
 
 export const byProvider2 = {
-  get: get52,
+  get: get53,
   credentials: credentials3,
 }
 
@@ -2354,7 +2463,7 @@ export const toolProviders = {
   byProvider: byProvider2,
 }
 
-export const get53 = oc
+export const get54 = oc
   .route({
     inputStructure: 'detailed',
     method: 'GET',
@@ -2371,10 +2480,10 @@ export const get53 = oc
   .output(zGetWorkspacesByWorkspaceIdToolsResponse)
 
 export const tools = {
-  get: get53,
+  get: get54,
 }
 
-export const get54 = oc
+export const get55 = oc
   .route({
     inputStructure: 'detailed',
     method: 'GET',
@@ -2386,7 +2495,7 @@ export const get54 = oc
   .output(zGetWorkspacesByWorkspaceIdResponse)
 
 export const byWorkspaceId = {
-  get: get54,
+  get: get55,
   apps: apps2,
   knowledgeBases,
   knowledgeFs,
@@ -2400,7 +2509,7 @@ export const byWorkspaceId = {
   tools,
 }
 
-export const get55 = oc
+export const get56 = oc
   .route({
     inputStructure: 'detailed',
     method: 'GET',
@@ -2412,7 +2521,7 @@ export const get55 = oc
   .output(zGetWorkspacesResponse)
 
 export const workspaces = {
-  get: get55,
+  get: get56,
   byWorkspaceId,
 }
 

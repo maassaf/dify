@@ -1,18 +1,24 @@
+from collections.abc import Collection, Sequence
 from dataclasses import dataclass, field
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from functools import partial
 
 import pytest
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.orm import Session, sessionmaker
 
+import repositories.oauth_device_token_repository as device_token_repository_module
+from configs.feature import DEFAULT_OAUTH_MAX_TOKENS_PER_ACCOUNT
 from constants.oauth_bearer import TOKEN_CACHE_KEY_FMT
 from extensions.ext_redis import RedisClientWrapper
 from libs.oauth_bearer import sha256_hex
-from models.oauth import OAuthAccessToken
+from models.oauth import OpenAPIOAuthAccessToken, OpenAPIOAuthRefreshToken
 from repositories.oauth_device_token_repository import SQLAlchemyOAuthDeviceTokenRepository
 from services.entities.account_entities import AccountSnapshot
 from services.oauth_device_adapters import OAuthDeviceTokenIssuanceGateway
+from services.oauth_device_contracts import GrantKey, IssuedOAuthToken
+from tests.helpers.unit.repositories.oauth_lock_order import record_locks
+from tests.helpers.unit.repositories.oauth_refresh_tokens import seed_refresh_token
 
 
 @dataclass
@@ -54,6 +60,8 @@ def _account(account_id: str = "account-1", email: str = "ada@example.com") -> A
 
 def _repository(
     sqlite_session_factory: sessionmaker[Session],
+    *,
+    max_sessions_per_account: int = DEFAULT_OAUTH_MAX_TOKENS_PER_ACCOUNT,
 ) -> tuple[
     OAuthDeviceTokenIssuanceGateway,
     SQLAlchemyOAuthDeviceTokenRepository,
@@ -64,7 +72,11 @@ def _repository(
     redis = RedisClientWrapper()
     redis.initialize(raw_redis)  # type: ignore[arg-type]
     ttl_policy = _TTLPolicy()
-    repository = SQLAlchemyOAuthDeviceTokenRepository(session_factory=sqlite_session_factory, redis=redis)
+    repository = SQLAlchemyOAuthDeviceTokenRepository(
+        session_factory=sqlite_session_factory,
+        redis=redis,
+        max_sessions_per_account=max_sessions_per_account,
+    )
     return (
         OAuthDeviceTokenIssuanceGateway(tokens=repository, ttl_policy=ttl_policy),
         repository,
@@ -89,7 +101,7 @@ def test_issue_account_token_persists_with_short_lived_session(
     assert issued.token.startswith("dfoa_")
     assert ttl_policy.workspace_ids == ["workspace-1"]
     sqlite_session.expire_all()
-    record = sqlite_session.get(OAuthAccessToken, issued.token_id)
+    record = sqlite_session.get(OpenAPIOAuthAccessToken, issued.token_id)
     assert record is not None
     assert record.account_id == "account-1"
     assert record.subject_issuer == "dify:account"
@@ -113,7 +125,9 @@ def test_issue_rotates_matching_live_token_and_invalidates_old_cache(
     second = issue_token()
 
     sqlite_session.expire_all()
-    records = list(sqlite_session.scalars(select(OAuthAccessToken).order_by(OAuthAccessToken.created_at)).all())
+    records = list(
+        sqlite_session.scalars(select(OpenAPIOAuthAccessToken).order_by(OpenAPIOAuthAccessToken.created_at)).all()
+    )
     assert len(records) == 2
     assert sum(record.revoked_at is None for record in records) == 1
     assert records[-1].id == second.token_id
@@ -138,10 +152,10 @@ def test_rollback_rotation_removes_new_token_and_restores_previous_session(
     assert issuer.rollback_token(second) is True
 
     sqlite_session.expire_all()
-    first_record = sqlite_session.get(OAuthAccessToken, first.token_id)
+    first_record = sqlite_session.get(OpenAPIOAuthAccessToken, first.token_id)
     assert first_record is not None
     assert first_record.revoked_at is None
-    assert sqlite_session.get(OAuthAccessToken, second.token_id) is None
+    assert sqlite_session.get(OpenAPIOAuthAccessToken, second.token_id) is None
     assert redis.deleted == [
         TOKEN_CACHE_KEY_FMT.format(hash=sha256_hex(first.token)),
         TOKEN_CACHE_KEY_FMT.format(hash=sha256_hex(second.token)),
@@ -168,9 +182,9 @@ def test_rollback_does_not_restore_predecessor_after_later_rotation(
     assert issuer.rollback_token(second) is False
 
     sqlite_session.expire_all()
-    records = list(sqlite_session.scalars(select(OAuthAccessToken)).all())
+    records = list(sqlite_session.scalars(select(OpenAPIOAuthAccessToken)).all())
     assert [record.id for record in records if record.revoked_at is None] == [third.token_id]
-    first_record = sqlite_session.get(OAuthAccessToken, first.token_id)
+    first_record = sqlite_session.get(OpenAPIOAuthAccessToken, first.token_id)
     assert first_record is not None
     assert first_record.revoked_at is not None
 
@@ -217,7 +231,7 @@ def test_revoke_account_session_scopes_update_and_invalidates_cache(
     assert repository.revoke_account_session(account_id="account-1", token_id=issued.token_id) is True
 
     sqlite_session.expire_all()
-    record = sqlite_session.get(OAuthAccessToken, issued.token_id)
+    record = sqlite_session.get(OpenAPIOAuthAccessToken, issued.token_id)
     assert record is not None
     assert record.revoked_at is not None
     assert record.token_hash is None
@@ -234,3 +248,465 @@ def test_issue_external_token_rejects_empty_issuer(sqlite_session_factory: sessi
             client_id="difyctl",
             device_label="CLI",
         )
+
+
+def _issue_sessions(issuer: OAuthDeviceTokenIssuanceGateway, device_labels: Sequence[str]) -> list[IssuedOAuthToken]:
+    return [
+        issuer.issue_account_token(
+            account=_account(),
+            workspace_id="workspace-1",
+            client_id="difyctl",
+            device_label=device_label,
+        )
+        for device_label in device_labels
+    ]
+
+
+def _set_usage(
+    session: Session,
+    token: IssuedOAuthToken,
+    *,
+    created_at: datetime,
+    last_used_at: datetime | None = None,
+) -> None:
+    session.execute(
+        update(OpenAPIOAuthAccessToken)
+        .where(OpenAPIOAuthAccessToken.id == token.token_id)
+        .values(created_at=created_at, last_used_at=last_used_at)
+    )
+    session.commit()
+
+
+def _live_token_ids(session: Session) -> set[str]:
+    session.expire_all()
+    return set(
+        session.scalars(select(OpenAPIOAuthAccessToken.id).where(OpenAPIOAuthAccessToken.revoked_at.is_(None))).all()
+    )
+
+
+def _cache_key(token: IssuedOAuthToken) -> str:
+    return TOKEN_CACHE_KEY_FMT.format(hash=sha256_hex(token.token))
+
+
+def test_sixteenth_login_evicts_least_recently_used(
+    sqlite_session: Session,
+    sqlite_session_factory: sessionmaker[Session],
+) -> None:
+    issuer, _repository_, _redis, _ttl_policy = _repository(sqlite_session_factory)
+    base = datetime.now(UTC) - timedelta(days=1)
+    sessions = _issue_sessions(issuer, [f"device-{index}" for index in range(DEFAULT_OAUTH_MAX_TOKENS_PER_ACCOUNT)])
+    for index, token in enumerate(sessions):
+        _set_usage(sqlite_session, token, created_at=base, last_used_at=base + timedelta(minutes=index + 1))
+    least_recently_used = sessions[5]
+    _set_usage(sqlite_session, least_recently_used, created_at=base, last_used_at=base)
+
+    newest = _issue_sessions(issuer, ["device-new"])[0]
+
+    assert newest.rotation.evicted_token_ids == (least_recently_used.token_id,)
+    assert newest.rotation.evicted_token_hashes == (sha256_hex(least_recently_used.token),)
+    live = _live_token_ids(sqlite_session)
+    assert len(live) == DEFAULT_OAUTH_MAX_TOKENS_PER_ACCOUNT
+    assert least_recently_used.token_id not in live
+    assert newest.token_id in live
+
+
+def test_never_used_row_ranks_by_created_at(
+    sqlite_session: Session,
+    sqlite_session_factory: sessionmaker[Session],
+) -> None:
+    issuer, _repository_, _redis, _ttl_policy = _repository(sqlite_session_factory, max_sessions_per_account=3)
+    now = datetime.now(UTC)
+    used_recently, never_used, used_long_ago = _issue_sessions(issuer, ["a", "b", "c"])
+    _set_usage(
+        sqlite_session, used_recently, created_at=now - timedelta(hours=5), last_used_at=now - timedelta(minutes=10)
+    )
+    # Created after the other row was last used, so it must outrank that row.
+    _set_usage(sqlite_session, never_used, created_at=now - timedelta(hours=1))
+    _set_usage(
+        sqlite_session, used_long_ago, created_at=now - timedelta(hours=4), last_used_at=now - timedelta(hours=3)
+    )
+
+    newest = _issue_sessions(issuer, ["d"])[0]
+
+    assert newest.rotation.evicted_token_ids == (used_long_ago.token_id,)
+    assert _live_token_ids(sqlite_session) == {
+        used_recently.token_id,
+        never_used.token_id,
+        newest.token_id,
+    }
+
+
+def test_same_key_rotation_does_not_count_twice(
+    sqlite_session: Session,
+    sqlite_session_factory: sessionmaker[Session],
+) -> None:
+    issuer, _repository_, _redis, _ttl_policy = _repository(sqlite_session_factory, max_sessions_per_account=3)
+    first, second, third = _issue_sessions(issuer, ["a", "b", "c"])
+
+    relogin = _issue_sessions(issuer, ["b"])[0]
+
+    assert relogin.rotation.replaced_token_id == second.token_id
+    assert relogin.rotation.evicted_token_ids == ()
+    assert _live_token_ids(sqlite_session) == {first.token_id, third.token_id, relogin.token_id}
+
+
+def test_expired_rows_do_not_count(
+    sqlite_session: Session,
+    sqlite_session_factory: sessionmaker[Session],
+) -> None:
+    issuer, _repository_, _redis, _ttl_policy = _repository(sqlite_session_factory, max_sessions_per_account=2)
+    expired, live = _issue_sessions(issuer, ["a", "b"])
+    sqlite_session.execute(
+        update(OpenAPIOAuthAccessToken)
+        .where(OpenAPIOAuthAccessToken.id == expired.token_id)
+        .values(expires_at=datetime.now(UTC) - timedelta(minutes=1))
+    )
+    sqlite_session.commit()
+
+    newest = _issue_sessions(issuer, ["c"])[0]
+
+    assert newest.rotation.evicted_token_ids == ()
+    assert _live_token_ids(sqlite_session) == {expired.token_id, live.token_id, newest.token_id}
+
+
+def test_external_sso_rows_are_not_capped(
+    sqlite_session: Session,
+    sqlite_session_factory: sessionmaker[Session],
+) -> None:
+    issuer, _repository_, _redis, _ttl_policy = _repository(sqlite_session_factory, max_sessions_per_account=1)
+
+    issued = [
+        issuer.issue_external_token(
+            subject_email="ada@example.com",
+            subject_issuer="https://idp.example",
+            client_id="difyctl",
+            device_label=device_label,
+        )
+        for device_label in ("a", "b", "c")
+    ]
+
+    assert all(token.rotation.evicted_token_ids == () for token in issued)
+    assert _live_token_ids(sqlite_session) == {token.token_id for token in issued}
+
+
+def test_lowered_cap_evicts_several(
+    sqlite_session: Session,
+    sqlite_session_factory: sessionmaker[Session],
+) -> None:
+    issuer, _repository_, _redis, _ttl_policy = _repository(sqlite_session_factory, max_sessions_per_account=5)
+    base = datetime.now(UTC) - timedelta(days=1)
+    sessions = _issue_sessions(issuer, ["a", "b", "c", "d", "e"])
+    for index, token in enumerate(sessions):
+        _set_usage(sqlite_session, token, created_at=base + timedelta(minutes=index))
+    lowered_issuer, _lowered_repository, _lowered_redis, _lowered_ttl = _repository(
+        sqlite_session_factory, max_sessions_per_account=2
+    )
+
+    newest = _issue_sessions(lowered_issuer, ["f"])[0]
+
+    assert newest.rotation.evicted_token_ids == tuple(token.token_id for token in sessions[:4])
+    assert _live_token_ids(sqlite_session) == {sessions[4].token_id, newest.token_id}
+
+
+def test_rollback_restores_evicted_rows(
+    sqlite_session: Session,
+    sqlite_session_factory: sessionmaker[Session],
+) -> None:
+    issuer, _repository_, _redis, _ttl_policy = _repository(sqlite_session_factory, max_sessions_per_account=2)
+    base = datetime.now(UTC) - timedelta(days=1)
+    first, second = _issue_sessions(issuer, ["a", "b"])
+    _set_usage(sqlite_session, first, created_at=base)
+    _set_usage(sqlite_session, second, created_at=base + timedelta(minutes=1))
+    newest = _issue_sessions(issuer, ["c"])[0]
+    assert newest.rotation.evicted_token_ids == (first.token_id,)
+
+    assert issuer.rollback_token(newest) is True
+
+    assert _live_token_ids(sqlite_session) == {first.token_id, second.token_id}
+    assert sqlite_session.get(OpenAPIOAuthAccessToken, newest.token_id) is None
+
+
+def test_rollback_keeps_evicted_row_revoked_after_user_revoke(
+    sqlite_session: Session,
+    sqlite_session_factory: sessionmaker[Session],
+) -> None:
+    issuer, repository, _redis, _ttl_policy = _repository(sqlite_session_factory, max_sessions_per_account=1)
+    first = _issue_sessions(issuer, ["a"])[0]
+    newest = _issue_sessions(issuer, ["b"])[0]
+    assert newest.rotation.evicted_token_ids == (first.token_id,)
+    sqlite_session.execute(
+        update(OpenAPIOAuthAccessToken).where(OpenAPIOAuthAccessToken.id == first.token_id).values(token_hash=None)
+    )
+    sqlite_session.commit()
+
+    assert repository.rollback_rotation(newest.rotation) is True
+
+    assert _live_token_ids(sqlite_session) == set()
+
+
+def test_evicted_hashes_removed_from_cache(
+    sqlite_session: Session,
+    sqlite_session_factory: sessionmaker[Session],
+) -> None:
+    issuer, _repository_, redis, _ttl_policy = _repository(sqlite_session_factory, max_sessions_per_account=3)
+    base = datetime.now(UTC) - timedelta(days=1)
+    sessions = _issue_sessions(issuer, ["a", "b", "c"])
+    for index, token in enumerate(sessions):
+        _set_usage(sqlite_session, token, created_at=base + timedelta(minutes=index))
+    oldest, relogged, _newer = sessions
+    lowered_issuer, _lowered_repository, lowered_redis, _lowered_ttl = _repository(
+        sqlite_session_factory, max_sessions_per_account=2
+    )
+
+    newest = _issue_sessions(lowered_issuer, ["b"])[0]
+
+    assert newest.rotation.replaced_token_id == relogged.token_id
+    assert newest.rotation.evicted_token_ids == (oldest.token_id,)
+    assert redis.deleted == []
+    assert lowered_redis.deleted == [_cache_key(relogged), _cache_key(oldest)]
+
+
+def _grant(device_label: str) -> GrantKey:
+    return GrantKey(
+        subject_email="ada@example.com",
+        subject_issuer="dify:account",
+        client_id="difyctl",
+        device_label=device_label,
+    )
+
+
+def _issue_refresh(factory: sessionmaker[Session], grant: GrantKey) -> str:
+    return seed_refresh_token(
+        factory,
+        grant=grant,
+        account_id="account-1",
+        workspace_id="workspace-1",
+        lifetime=timedelta(days=30),
+    )
+
+
+def _refresh_labels(session: Session) -> set[str]:
+    session.expire_all()
+    return set(session.scalars(select(OpenAPIOAuthRefreshToken.device_label)).all())
+
+
+def _set_refresh_issued_at(session: Session, issued_at: datetime) -> None:
+    session.execute(update(OpenAPIOAuthRefreshToken).values(created_at=issued_at))
+    session.commit()
+
+
+def _expire(session: Session, token: IssuedOAuthToken) -> None:
+    session.execute(
+        update(OpenAPIOAuthAccessToken)
+        .where(OpenAPIOAuthAccessToken.id == token.token_id)
+        .values(expires_at=datetime.now(UTC) - timedelta(minutes=1))
+    )
+    session.commit()
+
+
+def test_console_session_revoke_also_deletes_the_refresh_token(
+    sqlite_session: Session,
+    sqlite_session_factory: sessionmaker[Session],
+) -> None:
+    issuer, repository, _redis, _ttl_policy = _repository(sqlite_session_factory)
+    revoked, kept = _issue_sessions(issuer, ["a", "b"])
+    _issue_refresh(sqlite_session_factory, _grant("a"))
+    _issue_refresh(sqlite_session_factory, _grant("b"))
+
+    assert repository.revoke_account_session(account_id="account-1", token_id=revoked.token_id) is True
+
+    assert _refresh_labels(sqlite_session) == {"b"}
+    assert _live_token_ids(sqlite_session) == {kept.token_id}
+
+
+def test_console_session_revoke_locks_the_account_row_first(
+    sqlite_session_factory: sessionmaker[Session],
+) -> None:
+    issuer, repository, _redis, _ttl_policy = _repository(sqlite_session_factory)
+    [revoked] = _issue_sessions(issuer, ["a"])
+    _issue_refresh(sqlite_session_factory, _grant("a"))
+
+    with record_locks(sqlite_session_factory) as log:
+        repository.revoke_account_session(account_id="account-1", token_id=revoked.token_id)
+
+    assert log.tables[0] == "accounts"
+    assert "openapi_oauth_refresh_tokens" in log.tables
+    assert log.follows_lock_order()
+
+
+def test_eviction_deletes_the_refresh_token_in_the_login_transaction(
+    sqlite_session_factory: sessionmaker[Session],
+) -> None:
+    issuer, _repository_, _redis, _ttl_policy = _repository(sqlite_session_factory, max_sessions_per_account=1)
+    _issue_sessions(issuer, ["a"])
+    _issue_refresh(sqlite_session_factory, _grant("a"))
+
+    with record_locks(sqlite_session_factory) as log:
+        _issue_sessions(issuer, ["b"])
+
+    assert log.tables.index("openapi_oauth_refresh_tokens") < log.commits[0]
+    assert log.follows_lock_order()
+
+
+def test_expired_access_with_live_refresh_counts_toward_the_cap(
+    sqlite_session: Session,
+    sqlite_session_factory: sessionmaker[Session],
+) -> None:
+    issuer, _repository_, _redis, _ttl_policy = _repository(sqlite_session_factory, max_sessions_per_account=2)
+    now = datetime.now(UTC)
+    refresh_only, live = _issue_sessions(issuer, ["a", "b"])
+    _issue_refresh(sqlite_session_factory, _grant("a"))
+    _set_refresh_issued_at(sqlite_session, now - timedelta(hours=1))
+    _expire(sqlite_session, refresh_only)
+    _set_usage(sqlite_session, live, created_at=now - timedelta(hours=2), last_used_at=now - timedelta(minutes=5))
+
+    newest = _issue_sessions(issuer, ["c"])[0]
+
+    assert newest.rotation.evicted_token_ids == ()
+    assert _refresh_labels(sqlite_session) == set()
+    assert _live_token_ids(sqlite_session) == {refresh_only.token_id, live.token_id, newest.token_id}
+
+
+def test_sixteenth_login_evicts_that_grants_refresh_too(
+    sqlite_session: Session,
+    sqlite_session_factory: sessionmaker[Session],
+) -> None:
+    issuer, _repository_, redis, _ttl_policy = _repository(sqlite_session_factory)
+    base = datetime.now(UTC) - timedelta(days=1)
+    labels = [f"device-{index}" for index in range(DEFAULT_OAUTH_MAX_TOKENS_PER_ACCOUNT)]
+    sessions = _issue_sessions(issuer, labels)
+    for index, token in enumerate(sessions):
+        _set_usage(sqlite_session, token, created_at=base, last_used_at=base + timedelta(minutes=index + 1))
+    least_recently_used = sessions[0]
+    _issue_refresh(sqlite_session_factory, _grant("device-0"))
+    _issue_refresh(sqlite_session_factory, _grant("device-1"))
+    _set_refresh_issued_at(sqlite_session, base)
+
+    newest = _issue_sessions(issuer, ["device-new"])[0]
+
+    assert newest.rotation.evicted_token_ids == (least_recently_used.token_id,)
+    assert _refresh_labels(sqlite_session) == {"device-1"}
+    assert redis.deleted == [_cache_key(least_recently_used)]
+    assert least_recently_used.token_id not in _live_token_ids(sqlite_session)
+
+
+def test_older_access_session_goes_before_a_fresher_refresh_only_one(
+    sqlite_session: Session,
+    sqlite_session_factory: sessionmaker[Session],
+) -> None:
+    issuer, _repository_, _redis, _ttl_policy = _repository(sqlite_session_factory, max_sessions_per_account=2)
+    now = datetime.now(UTC)
+    refresh_only, idle = _issue_sessions(issuer, ["a", "b"])
+    _issue_refresh(sqlite_session_factory, _grant("a"))
+    _expire(sqlite_session, refresh_only)
+    _set_usage(sqlite_session, idle, created_at=now - timedelta(days=2))
+
+    newest = _issue_sessions(issuer, ["c"])[0]
+
+    assert newest.rotation.evicted_token_ids == (idle.token_id,)
+    assert _refresh_labels(sqlite_session) == {"a"}
+
+
+def test_refresh_rotation_at_the_cap_evicts_nothing(
+    sqlite_session: Session,
+    sqlite_session_factory: sessionmaker[Session],
+) -> None:
+    issuer, _repository_, _redis, _ttl_policy = _repository(sqlite_session_factory, max_sessions_per_account=2)
+    first, second = _issue_sessions(issuer, ["a", "b"])
+    _issue_refresh(sqlite_session_factory, _grant("a"))
+    _expire(sqlite_session, first)
+
+    rotated = _issue_sessions(issuer, ["a"])[0]
+
+    assert rotated.rotation.evicted_token_ids == ()
+    assert _refresh_labels(sqlite_session) == {"a"}
+    assert _live_token_ids(sqlite_session) == {second.token_id, rotated.token_id}
+
+
+def test_refresh_delete_failure_rolls_back_the_login(
+    sqlite_session: Session,
+    sqlite_session_factory: sessionmaker[Session],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    issuer, _repository_, _redis, _ttl_policy = _repository(sqlite_session_factory, max_sessions_per_account=1)
+    first = _issue_sessions(issuer, ["a"])[0]
+    _issue_refresh(sqlite_session_factory, _grant("a"))
+
+    def fail(session: Session, grants: Collection[GrantKey], *, account_id: str) -> None:
+        _ = session, grants, account_id
+        raise ConnectionError("database unavailable")
+
+    monkeypatch.setattr(device_token_repository_module, "delete_refresh_grants", fail)
+
+    with pytest.raises(ConnectionError):
+        _issue_sessions(issuer, ["b"])
+
+    assert _live_token_ids(sqlite_session) == {first.token_id}
+    assert _refresh_labels(sqlite_session) == {"a"}
+
+
+def test_rollback_after_eviction_restores_the_access_row_but_not_the_refresh(
+    sqlite_session: Session,
+    sqlite_session_factory: sessionmaker[Session],
+) -> None:
+    issuer, _repository_, _redis, _ttl_policy = _repository(sqlite_session_factory, max_sessions_per_account=1)
+    first = _issue_sessions(issuer, ["a"])[0]
+    _issue_refresh(sqlite_session_factory, _grant("a"))
+    newest = _issue_sessions(issuer, ["b"])[0]
+
+    assert issuer.rollback_token(newest) is True
+
+    assert _live_token_ids(sqlite_session) == {first.token_id}
+    assert _refresh_labels(sqlite_session) == set()
+
+
+def test_console_lists_and_revokes_a_device_session_as_before(
+    sqlite_session: Session,
+    sqlite_session_factory: sessionmaker[Session],
+) -> None:
+    issuer, repository, redis, _ttl_policy = _repository(sqlite_session_factory)
+    [device] = _issue_sessions(issuer, ["a"])
+
+    page = repository.list_account_sessions(account_id="account-1", page=1, limit=10)
+
+    assert [(item.id, item.prefix) for item in page.items] == [(device.token_id, "dfoa_")]
+    assert repository.revoke_account_session(account_id="account-1", token_id=device.token_id) is True
+    assert _live_token_ids(sqlite_session) == set()
+    assert redis.deleted == [_cache_key(device)]
+    assert repository.list_account_sessions(account_id="account-1", page=1, limit=10).items == ()
+
+
+def test_console_never_lists_or_revokes_an_external_sso_session(
+    sqlite_session: Session,
+    sqlite_session_factory: sessionmaker[Session],
+) -> None:
+    issuer, repository, redis, _ttl_policy = _repository(sqlite_session_factory)
+    external = issuer.issue_external_token(
+        subject_email="ada@example.com",
+        subject_issuer="https://idp.example",
+        client_id="difyctl",
+        device_label="cli",
+    )
+
+    assert repository.list_account_sessions(account_id="account-1", page=1, limit=10).total == 0
+    assert repository.revoke_account_session(account_id="account-1", token_id=external.token_id) is False
+    assert _live_token_ids(sqlite_session) == {external.token_id}
+    assert redis.deleted == []
+
+
+def test_console_revoke_by_refresh_token_id_locks_the_account_row_first(
+    sqlite_session: Session,
+    sqlite_session_factory: sessionmaker[Session],
+) -> None:
+    _issuer, repository, _redis, _ttl_policy = _repository(sqlite_session_factory)
+    _issue_refresh(sqlite_session_factory, _grant("a"))
+    [session_id] = [
+        item.id for item in repository.list_account_sessions(account_id="account-1", page=1, limit=10).items
+    ]
+
+    with record_locks(sqlite_session_factory) as log:
+        assert repository.revoke_account_session(account_id="account-1", token_id=session_id) is True
+
+    assert log.tables[0] == "accounts"
+    assert log.follows_lock_order()
+    assert _refresh_labels(sqlite_session) == set()

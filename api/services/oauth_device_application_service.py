@@ -5,8 +5,10 @@ from __future__ import annotations
 import logging
 import secrets
 from collections.abc import Sequence
+from datetime import timedelta
 from hashlib import sha256
 from typing import Protocol
+from urllib.parse import quote
 
 from machinery.context import RequestContext
 from services.entities.account_entities import AccountSnapshot
@@ -21,6 +23,7 @@ from services.oauth_device_contracts import (
     ApprovalSessionConsumedError,
     ApprovalTransitionConfirmation,
     AuthorizationPendingError,
+    ClientMismatchError,
     DeviceApprovalContext,
     DeviceAuthorization,
     DeviceFlowStateView,
@@ -54,9 +57,11 @@ from services.oauth_device_contracts import (
     OAuthDeviceTokenWrite,
     PollPayload,
     PollTooFastError,
+    RefreshTokenIssue,
     SlowDownDecision,
     StateNotFoundError,
     UnsupportedClientError,
+    default_device_label,
 )
 
 logger = logging.getLogger(__name__)
@@ -116,6 +121,8 @@ class OAuthDeviceTokenIssuer(Protocol):
         workspace_id: str,
         client_id: str,
         device_label: str,
+        lifetime: timedelta | None = None,
+        refresh: RefreshTokenIssue | None = None,
     ) -> IssuedOAuthToken: ...
 
     def issue_external_token(
@@ -192,6 +199,34 @@ class OAuthDeviceSettings(Protocol):
     def sso_base_url(self) -> str | None: ...
 
 
+def build_account_poll_payload(
+    account: AccountSnapshot,
+    active_workspace_id: str,
+    workspaces: Sequence[DeviceWorkspace],
+    mint: IssuedOAuthToken,
+) -> PollPayload:
+    default_workspace_id = next(
+        (workspace.id for workspace in workspaces if workspace.id == active_workspace_id),
+        None,
+    )
+    if default_workspace_id is None:
+        default_workspace_id = next((workspace.id for workspace in workspaces if workspace.current), None)
+    if default_workspace_id is None and workspaces:
+        default_workspace_id = workspaces[0].id
+
+    return {
+        "token": mint.token,
+        "expires_at": mint.expires_at,
+        "subject_type": "account",
+        "account": {"id": account.id, "email": account.email, "name": account.name},
+        "workspaces": [
+            {"id": workspace.id, "name": workspace.name, "role": workspace.role} for workspace in workspaces
+        ],
+        "default_workspace_id": default_workspace_id,
+        "token_id": mint.token_id,
+    }
+
+
 class OAuthDeviceApplicationService:
     def __init__(
         self,
@@ -226,19 +261,23 @@ class OAuthDeviceApplicationService:
         self,
         *,
         client_id: str,
-        device_label: str,
+        device_label: str | None,
         created_ip: str,
         request_origin: str,
     ) -> DeviceAuthorization:
         if client_id not in self._settings.known_client_ids:
             raise UnsupportedClientError
 
+        if device_label is None:
+            device_label = default_device_label(client_id)
         device_code, user_code, expires_in = self._store.start(client_id, device_label, created_ip)
         base_url = self._settings.verification_base_url or request_origin
+        verification_uri = f"{base_url.rstrip('/')}/device"
         return DeviceAuthorization(
             device_code=device_code,
             user_code=user_code,
-            verification_uri=f"{base_url.rstrip('/')}/device",
+            verification_uri=verification_uri,
+            verification_uri_complete=f"{verification_uri}?user_code={quote(user_code)}",
             expires_in=expires_in,
             interval=DEFAULT_POLL_INTERVAL_SECONDS,
         )
@@ -266,6 +305,15 @@ class OAuthDeviceApplicationService:
 
         self._audit_cross_ip_if_needed(state, poll_ip)
         return poll_payload
+
+    def poll_device_grant(self, *, client_id: str, device_code: str, poll_ip: str) -> PollPayload:
+        # Checked on every poll, so a client taken off the allowlist after /device/code gets no token.
+        if client_id not in self._settings.known_client_ids:
+            raise UnsupportedClientError
+        state = self._store.load_by_device_code(device_code)
+        if state is not None and state.client_id != client_id:
+            raise ClientMismatchError
+        return self.poll(device_code=device_code, poll_ip=poll_ip)
 
     def lookup(self, *, user_code: str) -> DeviceLookup:
         found = self._store.load_by_user_code(user_code.strip().upper())
@@ -307,7 +355,7 @@ class OAuthDeviceApplicationService:
                 device_label=state.device_label,
             )
             try:
-                poll_payload = self._build_account_poll_payload(
+                poll_payload = build_account_poll_payload(
                     account,
                     context.active_workspace_id,
                     workspaces,
@@ -560,34 +608,6 @@ class OAuthDeviceApplicationService:
         if state.status is not DeviceFlowStatus.PENDING:
             raise AlreadyResolvedError
         return device_code, state
-
-    def _build_account_poll_payload(
-        self,
-        account: AccountSnapshot,
-        active_workspace_id: str,
-        workspaces: Sequence[DeviceWorkspace],
-        mint: IssuedOAuthToken,
-    ) -> PollPayload:
-        default_workspace_id = next(
-            (workspace.id for workspace in workspaces if workspace.id == active_workspace_id),
-            None,
-        )
-        if default_workspace_id is None:
-            default_workspace_id = next((workspace.id for workspace in workspaces if workspace.current), None)
-        if default_workspace_id is None and workspaces:
-            default_workspace_id = workspaces[0].id
-
-        return {
-            "token": mint.token,
-            "expires_at": mint.expires_at,
-            "subject_type": "account",
-            "account": {"id": account.id, "email": account.email, "name": account.name},
-            "workspaces": [
-                {"id": workspace.id, "name": workspace.name, "role": workspace.role} for workspace in workspaces
-            ],
-            "default_workspace_id": default_workspace_id,
-            "token_id": mint.token_id,
-        }
 
     def _rollback_issued_token(self, mint: IssuedOAuthToken) -> None:
         try:

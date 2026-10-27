@@ -257,6 +257,8 @@ export type AppSettingsInfo = {
   name: string
 }
 
+export type AuthorizeErrorCode = 'invalid_client' | 'invalid_redirect_uri' | 'invalid_request'
+
 export type ChatAppInfo = {
   description?: string | null
   icon?: string | null
@@ -397,7 +399,7 @@ export type DeploymentEdition = 'CLOUD' | 'COMMUNITY' | 'ENTERPRISE'
 
 export type DeviceCodeRequest = {
   client_id: string
-  device_label: string
+  device_label?: string | null
 }
 
 export type DeviceCodeResponse = {
@@ -406,6 +408,7 @@ export type DeviceCodeResponse = {
   interval: number
   user_code: string
   verification_uri: string
+  verification_uri_complete: string
 }
 
 export type DeviceFlowErrorResponse = {
@@ -1041,6 +1044,82 @@ export type NodeTypeRow = {
   version: string
 }
 
+export type OAuthAuthorizeClientQuery = {
+  client_id: string
+  redirect_uri: string
+}
+
+export type OAuthAuthorizeClientResponse = {
+  client_id: string
+  display_name: string
+  localhost_only: boolean
+  logo_uri?: string | null
+  redirect_host: string
+}
+
+export type OAuthAuthorizeErrorResponse = {
+  error: AuthorizeErrorCode
+}
+
+export type OAuthAuthorizeRedirectResponse = {
+  redirect_to: string
+}
+
+export type OAuthAuthorizeRequest = {
+  client_id: string
+  code_challenge: string
+  code_challenge_method: string
+  redirect_uri: string
+  resource?: string | null
+  scope?: string | null
+  state?: string | null
+}
+
+export type OAuthRegisterErrorResponse = {
+  error: RegistrationErrorCode
+  error_description: string
+}
+
+export type OAuthRegisterRequest = {
+  client_name?: string | null
+  grant_types?: Array<'authorization_code' | 'refresh_token'> | null
+  logo_uri?: string | null
+  redirect_uris: Array<string>
+  response_types?: Array<'code'> | null
+  token_endpoint_auth_method?: TokenEndpointAuthMethod | null
+}
+
+export type OAuthRegisterResponse = {
+  client_id: string
+  client_id_issued_at: number
+  client_name: string
+  client_secret?: string | null
+  client_secret_expires_at?: number | null
+  grant_types: Array<'authorization_code' | 'refresh_token'>
+  logo_uri?: string | null
+  redirect_uris: Array<string>
+  response_types: Array<'code'>
+  token_endpoint_auth_method: TokenEndpointAuthMethod
+}
+
+export type OAuthTokenErrorResponse = {
+  error: string
+}
+
+export type OAuthTokenResponse = {
+  access_token: string
+  account?: AccountPayload | null
+  default_workspace_id?: string | null
+  expires_in: number
+  refresh_token?: string | null
+  subject_email?: string | null
+  subject_issuer?: string | null
+  subject_type: SubjectType
+  token_id: string
+  token_type: string
+  workspaces?: Array<WorkspacePayload>
+}
+
 export type OpenApiErrorCode =
   | 'agent_not_published'
   | 'app_mode_mismatch'
@@ -1250,6 +1329,8 @@ export type PublishResponse = {
   warning?: string | null
 }
 
+export type RegistrationErrorCode = 'invalid_client_metadata' | 'invalid_redirect_uri'
+
 export type ReleaseCheckName = 'draft_valid' | 'tested'
 
 export type ReleaseCheckResponse = {
@@ -1357,6 +1438,8 @@ export type SupportedAppType = 'advanced-chat' | 'agent-chat' | 'chat' | 'comple
 export type TaskStopResponse = {
   result: 'success'
 }
+
+export type TokenEndpointAuthMethod = 'client_secret_basic' | 'client_secret_post' | 'none'
 
 export type ToolCredentialCreatePayload = {
   credentials: {
@@ -3353,6 +3436,75 @@ export type GetNodeTypesByNodeTypeResponses = {
 export type GetNodeTypesByNodeTypeResponse =
   GetNodeTypesByNodeTypeResponses[keyof GetNodeTypesByNodeTypeResponses]
 
+export type PostOauthAuthorizeApproveData = {
+  body: OAuthAuthorizeRequest
+  path?: never
+  query?: never
+  url: '/oauth/authorize/approve'
+}
+
+export type PostOauthAuthorizeApproveErrors = {
+  400: OAuthAuthorizeErrorResponse | ErrorBody
+  default: ErrorBody
+}
+
+export type PostOauthAuthorizeApproveError =
+  PostOauthAuthorizeApproveErrors[keyof PostOauthAuthorizeApproveErrors]
+
+export type PostOauthAuthorizeApproveResponses = {
+  200: OAuthAuthorizeRedirectResponse
+}
+
+export type PostOauthAuthorizeApproveResponse =
+  PostOauthAuthorizeApproveResponses[keyof PostOauthAuthorizeApproveResponses]
+
+export type GetOauthAuthorizeClientData = {
+  body?: never
+  path?: never
+  query: {
+    client_id: string
+    redirect_uri: string
+  }
+  url: '/oauth/authorize/client'
+}
+
+export type GetOauthAuthorizeClientErrors = {
+  400: OAuthAuthorizeErrorResponse | ErrorBody
+  default: ErrorBody
+}
+
+export type GetOauthAuthorizeClientError =
+  GetOauthAuthorizeClientErrors[keyof GetOauthAuthorizeClientErrors]
+
+export type GetOauthAuthorizeClientResponses = {
+  200: OAuthAuthorizeClientResponse
+}
+
+export type GetOauthAuthorizeClientResponse =
+  GetOauthAuthorizeClientResponses[keyof GetOauthAuthorizeClientResponses]
+
+export type PostOauthAuthorizeDenyData = {
+  body: OAuthAuthorizeRequest
+  path?: never
+  query?: never
+  url: '/oauth/authorize/deny'
+}
+
+export type PostOauthAuthorizeDenyErrors = {
+  400: OAuthAuthorizeErrorResponse | ErrorBody
+  default: ErrorBody
+}
+
+export type PostOauthAuthorizeDenyError =
+  PostOauthAuthorizeDenyErrors[keyof PostOauthAuthorizeDenyErrors]
+
+export type PostOauthAuthorizeDenyResponses = {
+  200: OAuthAuthorizeRedirectResponse
+}
+
+export type PostOauthAuthorizeDenyResponse =
+  PostOauthAuthorizeDenyResponses[keyof PostOauthAuthorizeDenyResponses]
+
 export type PostOauthDeviceApproveData = {
   body: DeviceMutateRequest
   path?: never
@@ -3463,6 +3615,72 @@ export type PostOauthDeviceTokenResponses = {
 
 export type PostOauthDeviceTokenResponse =
   PostOauthDeviceTokenResponses[keyof PostOauthDeviceTokenResponses]
+
+export type PostOauthRegisterData = {
+  body: OAuthRegisterRequest
+  path?: never
+  query?: never
+  url: '/oauth/register'
+}
+
+export type PostOauthRegisterErrors = {
+  400: OAuthRegisterErrorResponse | ErrorBody
+  default: ErrorBody
+}
+
+export type PostOauthRegisterError = PostOauthRegisterErrors[keyof PostOauthRegisterErrors]
+
+export type PostOauthRegisterResponses = {
+  201: OAuthRegisterResponse
+}
+
+export type PostOauthRegisterResponse = PostOauthRegisterResponses[keyof PostOauthRegisterResponses]
+
+export type PostOauthRevokeData = {
+  body?: never
+  path?: never
+  query?: never
+  url: '/oauth/revoke'
+}
+
+export type PostOauthRevokeErrors = {
+  400: OAuthTokenErrorResponse | ErrorBody
+  401: OAuthTokenErrorResponse | ErrorBody
+  429: OAuthTokenErrorResponse | ErrorBody
+  default: ErrorBody
+}
+
+export type PostOauthRevokeError = PostOauthRevokeErrors[keyof PostOauthRevokeErrors]
+
+export type PostOauthRevokeResponses = {
+  200: {
+    [key: string]: unknown
+  }
+}
+
+export type PostOauthRevokeResponse = PostOauthRevokeResponses[keyof PostOauthRevokeResponses]
+
+export type PostOauthTokenData = {
+  body?: never
+  path?: never
+  query?: never
+  url: '/oauth/token'
+}
+
+export type PostOauthTokenErrors = {
+  400: OAuthTokenErrorResponse | ErrorBody
+  401: OAuthTokenErrorResponse | ErrorBody
+  429: OAuthTokenErrorResponse | ErrorBody
+  default: ErrorBody
+}
+
+export type PostOauthTokenError = PostOauthTokenErrors[keyof PostOauthTokenErrors]
+
+export type PostOauthTokenResponses = {
+  200: OAuthTokenResponse
+}
+
+export type PostOauthTokenResponse = PostOauthTokenResponses[keyof PostOauthTokenResponses]
 
 export type GetPermittedExternalAppsData = {
   body?: never

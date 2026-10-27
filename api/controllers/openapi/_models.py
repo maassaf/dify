@@ -5,7 +5,7 @@ from __future__ import annotations
 from collections.abc import Sequence
 from datetime import datetime
 from enum import StrEnum
-from typing import Any, Final, Literal, Protocol, Self
+from typing import Annotated, Any, Final, Literal, Protocol, Self
 
 from pydantic import BaseModel, ConfigDict, Field, PrivateAttr, field_validator, model_validator
 
@@ -18,6 +18,7 @@ from core.plugin.entities.plugin import PluginCategory
 from core.plugin.entities.plugin_daemon import PluginInstallTaskStatus
 from core.tools.entities.tool_entities import ToolProviderType
 from enums import DeploymentEdition, WebAppAccessMode
+from enums.oauth_client import TokenEndpointAuthMethod
 from fields.workflow_run_fields import WorkflowRunPaginationResponse
 from graphon.enums import BuiltinNodeTypes, WorkflowExecutionStatus
 from graphon.model_runtime.entities.model_entities import ModelType
@@ -28,6 +29,15 @@ from models.enums import WorkflowRunTriggeredFrom
 from models.model import AppMode, IconType
 from services.entities.app_entities import SupportedAppType
 from services.entities.dsl_entities import CheckDependenciesResult, Import, ImportMode
+from services.oauth_authorize_service import AuthorizeErrorCode
+from services.oauth_client_metadata import (
+    MAX_CLIENT_NAME_LENGTH,
+    MAX_LOGO_URI_LENGTH,
+    MAX_REDIRECT_URI_LENGTH,
+    MAX_REDIRECT_URIS,
+    RegistrationErrorCode,
+)
+from services.oauth_token_contracts import GrantType
 from services.workflow.graph_check import GraphIssue
 from services.workflow.graph_diff import WorkflowDiff
 
@@ -164,6 +174,74 @@ class DeviceTokenResponse(BaseModel):
     subject_issuer: str | None = None
 
 
+class OAuthTokenResponse(BaseModel):
+    access_token: str
+    token_type: str
+    expires_in: int
+    refresh_token: str | None = None
+    subject_type: SubjectType
+    account: AccountPayload | None = None
+    workspaces: list[WorkspacePayload] = []
+    default_workspace_id: str | None = None
+    token_id: str
+    subject_email: str | None = None
+    subject_issuer: str | None = None
+
+
+class OAuthTokenErrorResponse(BaseModel):
+    error: str
+
+
+class OAuthAuthorizeClientResponse(BaseModel):
+    client_id: str
+    display_name: str
+    logo_uri: str | None = None
+    redirect_host: str
+    localhost_only: bool
+
+
+class OAuthAuthorizeRedirectResponse(BaseModel):
+    """Where the consent page navigates next; the server builds it."""
+
+    redirect_to: str
+
+
+class OAuthAuthorizeErrorResponse(BaseModel):
+    error: AuthorizeErrorCode
+
+
+RegistrableGrantType = Literal[GrantType.AUTHORIZATION_CODE, GrantType.REFRESH_TOKEN]
+
+
+class OAuthRegisterRequest(BaseModel):
+    """RFC 7591 client metadata; unknown fields are ignored."""
+
+    redirect_uris: list[Annotated[str, Field(max_length=MAX_REDIRECT_URI_LENGTH)]] = Field(max_length=MAX_REDIRECT_URIS)
+    client_name: str | None = Field(default=None, max_length=MAX_CLIENT_NAME_LENGTH)
+    logo_uri: str | None = Field(default=None, max_length=MAX_LOGO_URI_LENGTH)
+    grant_types: list[RegistrableGrantType] | None = None
+    response_types: list[Literal["code"]] | None = None
+    token_endpoint_auth_method: TokenEndpointAuthMethod | None = None
+
+
+class OAuthRegisterResponse(BaseModel):
+    client_id: str
+    client_id_issued_at: int
+    client_name: str
+    redirect_uris: list[str]
+    grant_types: list[RegistrableGrantType]
+    response_types: list[Literal["code"]]
+    token_endpoint_auth_method: TokenEndpointAuthMethod
+    logo_uri: str | None = None
+    client_secret: str | None = None
+    client_secret_expires_at: int | None = None
+
+
+class OAuthRegisterErrorResponse(BaseModel):
+    error: RegistrationErrorCode
+    error_description: str
+
+
 class AccountResponse(BaseModel):
     subject_type: SubjectType
     subject_email: str | None = None
@@ -246,6 +324,7 @@ class DeviceCodeResponse(BaseModel):
     device_code: str
     user_code: str
     verification_uri: str
+    verification_uri_complete: str
     expires_in: int
     interval: int
 
@@ -417,7 +496,7 @@ class FileUploadPayload(BaseModel):
 
 class DeviceCodeRequest(BaseModel):
     client_id: str
-    device_label: str
+    device_label: str | None = None
 
 
 class DevicePollRequest(BaseModel):
@@ -431,6 +510,21 @@ class DeviceLookupQuery(BaseModel):
 
 class DeviceMutateRequest(BaseModel):
     user_code: str
+
+
+class OAuthAuthorizeClientQuery(BaseModel):
+    client_id: str
+    redirect_uri: str
+
+
+class OAuthAuthorizeRequest(BaseModel):
+    client_id: str
+    redirect_uri: str
+    code_challenge: str
+    code_challenge_method: str
+    resource: str | None = None
+    scope: str | None = None
+    state: str | None = None
 
 
 class PermittedExternalAppsListQuery(PageQuery):

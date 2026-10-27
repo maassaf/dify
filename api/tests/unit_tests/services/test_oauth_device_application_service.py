@@ -1,8 +1,9 @@
 from __future__ import annotations
 
 import logging
+import re
 from dataclasses import dataclass, field
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from unittest.mock import create_autospec, patch
 
 import pytest
@@ -26,6 +27,7 @@ from services.oauth_device_contracts import (
     ApprovalSessionConsumedError,
     ApprovalTransitionConfirmation,
     AuthorizationPendingError,
+    ClientMismatchError,
     DeviceFlowStatus,
     DeviceMutation,
     DeviceRequestContext,
@@ -53,6 +55,7 @@ from services.oauth_device_contracts import (
     OAuthDeviceTokenRotation,
     PollPayload,
     PollTooFastError,
+    RefreshTokenIssue,
     SlowDownDecision,
     StateNotFoundError,
     UnsupportedClientError,
@@ -81,10 +84,13 @@ class FakeStore:
     confirm_error: Exception | None = None
     acquired: list[tuple[str, str, int]] = field(default_factory=list)
     released: list[tuple[str, str]] = field(default_factory=list)
+    started_labels: list[str] = field(default_factory=list)
+    user_code: str = "ABCD-EFGH"
 
     def start(self, client_id: str, device_label: str, created_ip: str) -> tuple[str, str, int]:
-        _ = (client_id, device_label, created_ip)
-        return "device-1", "ABCD-EFGH", 900
+        self.started_labels.append(device_label)
+        _ = (client_id, created_ip)
+        return "device-1", self.user_code, 900
 
     def load_by_user_code(self, user_code: str) -> tuple[str, FakeState] | None:
         return self.states.get(user_code)
@@ -197,8 +203,10 @@ class FakeTokens:
         workspace_id: str,
         client_id: str,
         device_label: str,
+        lifetime: timedelta | None = None,
+        refresh: RefreshTokenIssue | None = None,
     ) -> IssuedOAuthToken:
-        _ = (account, workspace_id, client_id, device_label)
+        _ = (account, workspace_id, client_id, device_label, lifetime, refresh)
         self.account_issues += 1
         return self.account_token
 
@@ -654,6 +662,41 @@ def test_start_returns_device_codes_with_configured_or_request_origin(base_url: 
     assert result.interval == 5
 
 
+def test_start_returns_verification_uri_complete_with_encoded_user_code() -> None:
+    harness = _harness(settings=FakeSettings(verification_base_url="https://console.example/"))
+    harness.store.user_code = "AB CD&EF"
+
+    result = harness.service.start(
+        client_id="difyctl", device_label="CLI", created_ip="127.0.0.1", request_origin="https://request.example/"
+    )
+
+    assert result.verification_uri_complete == "https://console.example/device?user_code=AB%20CD%26EF"
+
+
+def test_start_without_label_generates_distinct_default_labels() -> None:
+    harness = _harness()
+
+    for _ in range(2):
+        harness.service.start(
+            client_id="difyctl", device_label=None, created_ip="127.0.0.1", request_origin="https://request.example/"
+        )
+
+    first, second = harness.store.started_labels
+    assert re.fullmatch(r"difyctl \([0-9a-f]{6}\)", first)
+    assert re.fullmatch(r"difyctl \([0-9a-f]{6}\)", second)
+    assert first != second
+
+
+def test_start_keeps_explicit_label() -> None:
+    harness = _harness()
+
+    harness.service.start(
+        client_id="difyctl", device_label="laptop", created_ip="127.0.0.1", request_origin="https://request.example/"
+    )
+
+    assert harness.store.started_labels == ["laptop"]
+
+
 @pytest.mark.parametrize(
     ("state", "expected_error"),
     [
@@ -1086,3 +1129,57 @@ def test_external_issuer_is_required_before_persistence(issuer: str) -> None:
         )
 
     tokens.rotate_token.assert_not_called()
+
+
+def test_poll_device_grant_rejects_other_client() -> None:
+    harness = _harness(settings=FakeSettings(known_client_ids=frozenset({"difyctl", "other"})))
+    harness.service.approve(RequestContext("request-1", None, "account-1", "workspace-1"), user_code="ABCD-EFGH")
+    harness.store.poll_decision = SlowDownDecision.SLOW_DOWN
+
+    with pytest.raises(ClientMismatchError):
+        harness.service.poll_device_grant(client_id="other", device_code="device-1", poll_ip="127.0.0.1")
+
+    harness.store.poll_decision = SlowDownDecision.OK
+    assert "ABCD-EFGH" in harness.store.states
+    result = harness.service.poll_device_grant(client_id="difyctl", device_code="device-1", poll_ip="127.0.0.1")
+    assert result["token"] == "secret-token"
+
+
+@pytest.mark.parametrize("device_code", ["device-1", "unknown-device"], ids=["known-code", "unknown-code"])
+def test_poll_device_grant_rejects_client_off_the_allowlist(device_code: str) -> None:
+    harness = _harness(settings=FakeSettings(known_client_ids=frozenset({"other-cli"})))
+    harness.service.approve(RequestContext("request-1", None, "account-1", "workspace-1"), user_code="ABCD-EFGH")
+
+    with pytest.raises(UnsupportedClientError):
+        harness.service.poll_device_grant(client_id="difyctl", device_code=device_code, poll_ip="127.0.0.1")
+
+    assert "ABCD-EFGH" in harness.store.states
+
+
+@pytest.mark.parametrize(
+    ("state", "expected_error"),
+    [
+        (FakeState(), AuthorizationPendingError),
+        (FakeState(status=DeviceFlowStatus.DENIED), AccessDeniedError),
+        (None, ExpiredTokenError),
+        (FakeState(status=DeviceFlowStatus.APPROVED), ExpiredTokenError),
+    ],
+    ids=["pending", "denied", "unknown", "approved-without-token"],
+)
+def test_poll_device_grant_matches_poll_for_right_client(
+    state: FakeState | None, expected_error: type[Exception]
+) -> None:
+    harness = _harness()
+    harness.store.states = {} if state is None else {"ABCD-EFGH": ("device-1", state)}
+
+    with pytest.raises(expected_error):
+        harness.service.poll_device_grant(client_id="difyctl", device_code="device-1", poll_ip="127.0.0.1")
+
+
+def test_poll_device_grant_returns_approved_payload() -> None:
+    harness = _harness()
+    harness.service.approve(RequestContext("request-1", None, "account-1", "workspace-1"), user_code="ABCD-EFGH")
+
+    result = harness.service.poll_device_grant(client_id="difyctl", device_code="device-1", poll_ip="127.0.0.1")
+
+    assert result["token"] == "secret-token"

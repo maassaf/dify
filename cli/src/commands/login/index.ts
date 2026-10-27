@@ -52,7 +52,7 @@ const INPUT = z.object({
 const PENDING_STATUS = 'pending'
 const FINAL_POLL_ERRORS: readonly string[] = [ErrorCode.AuthExpired, ErrorCode.AccessDenied]
 
-const ENV_LOGIN_MESSAGE = 'unset DIFY_TOKEN to log in interactively'
+const ENV_LOGIN_MESSAGE = 'unset DIFY_TOKEN or DIFY_TOKEN_FILE to log in interactively'
 const NO_EMAIL_MESSAGE = 'login response carries no account or subject email'
 const NO_SERVER_MESSAGE = 'pass --server <url>: the Dify server to log in to'
 const NO_SERVER_HINT = 'ask the user which server; Dify Cloud is https://cloud.dify.ai'
@@ -113,12 +113,13 @@ export default class Login extends Command<typeof INPUT> {
     const code = await api.requestCode({ device_label: hostname() })
     // Checked before it is printed: a URI difyctl would refuse to open is one the
     // operator should not be invited to paste either.
-    validateVerificationURI(code.verification_uri, input.insecure)
-    streams.notice(`open ${code.verification_uri}`)
+    const verificationUri = code.verification_uri_complete ?? code.verification_uri
+    validateVerificationURI(verificationUri, input.insecure)
+    streams.notice(`open ${verificationUri}`)
     streams.notice(`code ${code.user_code}`)
 
     const decision = decideOpen(realEnv(), input.no_browser)
-    if (decision === OpenDecision.Auto) await openUrl(code.verification_uri)
+    if (decision === OpenDecision.Auto) await openUrl(verificationUri)
 
     const pending: Pending = {
       server,
@@ -130,7 +131,7 @@ export default class Login extends Command<typeof INPUT> {
       await pendingLogin.save(pending)
       return {
         status: PENDING_STATUS,
-        verification_uri: code.verification_uri,
+        verification_uri: verificationUri,
         user_code: code.user_code,
         expires_in: code.expires_in,
       }

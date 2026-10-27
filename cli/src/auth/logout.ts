@@ -12,8 +12,8 @@ import { token } from '@/plugins/token'
 const SESSIONS_SELF_PATH = '/openapi/v1/account/sessions/self'
 const REVOKE_FAILED_PREFIX = 'server revoke failed: '
 
-/** Throws when the current login comes from DIFY_SERVER/DIFY_TOKEN, which neither
- * login nor logout may touch — each passes its own explanation. */
+/** Throws when the current login comes from the environment (DIFY_TOKEN or
+ * DIFY_TOKEN_FILE), which neither login nor logout may touch — each passes its own explanation. */
 export function assertNotEnvLogin(fromEnv: boolean, message: string): void {
   if (fromEnv) throw new BaseError({ code: ErrorCode.UsageInvalidFlag, message })
 }
