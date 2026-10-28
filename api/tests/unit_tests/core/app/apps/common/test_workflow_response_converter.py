@@ -31,15 +31,9 @@ from core.app.entities.queue_entities import (
     QueueWorkflowStartedEvent,
 )
 from core.app.entities.task_entities import HumanInputRequiredResponse, WorkflowPauseStreamResponse
-from core.workflow.nodes.human_input.entities import (
-    ParagraphInputConfig,
-    SelectInputConfig,
-    StringListSource,
-    UserActionConfig,
-)
-from core.workflow.nodes.human_input.enums import ValueSourceType
 from core.workflow.nodes.human_input.pause_reason import HumanInputRequired
 from core.workflow.system_variables import build_system_variables
+from enums.human_input import RecipientType, ValueSourceType
 from graphon.engine_events import GraphRunPausedEvent
 from graphon.entities import WorkflowStartReason
 from graphon.entities.pause_reason import HitlRequired
@@ -52,7 +46,8 @@ from models import Account as _workflow_response_converter_truncation_Account
 from models.account import Account as _workflow_pause_events_Account
 from models.account import Account as _workflow_response_converter_human_input_Account
 from models.account import Account as _workflow_response_converter_resumption_Account
-from models.human_input import HumanInputForm, HumanInputFormRecipient, RecipientType
+from models.human_input import HumanInputForm, HumanInputFormRecipient
+from models.human_input_entities import ParagraphInputConfig, SelectInputConfig, StringListSource, UserActionConfig
 from models.model import AppMode
 from models.workflow import Workflow, WorkflowNodeExecutionModel, WorkflowType
 
