@@ -11,7 +11,9 @@ import importlib.util
 import sys
 import types
 from pathlib import Path
+from types import ModuleType
 from unittest import mock
+from unittest.mock import MagicMock
 
 import pytest
 
@@ -23,32 +25,34 @@ MIGRATION_PATH = (
 )
 
 
-def _load_migration():
+def _load_migration() -> ModuleType:
     # The migration does `import models as models` but never references it, so a stub is
     # enough and keeps the test free of any database/app configuration.
     sys.modules.setdefault("models", types.ModuleType("models"))
     spec = importlib.util.spec_from_file_location("uuidv7_pg18_migration_under_test", MIGRATION_PATH)
+    assert spec is not None
+    assert spec.loader is not None
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     return module
 
 
-def _make_bind(dialect_name):
+def _make_bind(dialect_name: str) -> MagicMock:
     bind = mock.MagicMock()
     bind.dialect.name = dialect_name
     return bind
 
 
-def _executed_sql(fake_op):
+def _executed_sql(fake_op: MagicMock) -> list[str]:
     return [str(call.args[0]) for call in fake_op.execute.call_args_list]
 
 
 @pytest.fixture
-def migration():
+def migration() -> ModuleType:
     return _load_migration()
 
 
-def test_upgrade_creates_both_functions_when_native_uuidv7_absent(migration):
+def test_upgrade_creates_both_functions_when_native_uuidv7_absent(migration: ModuleType) -> None:
     # PostgreSQL 13 to 17: no native pg_catalog.uuidv7(), so both functions are created.
     # The DO block contains the CREATE FUNCTION guarded by IF NOT EXISTS, and
     # uuidv7_boundary is created unconditionally.
@@ -62,7 +66,7 @@ def test_upgrade_creates_both_functions_when_native_uuidv7_absent(migration):
     assert any("CREATE FUNCTION public.uuidv7_boundary(timestamptz)" in stmt for stmt in sql)
 
 
-def test_upgrade_skips_uuidv7_but_keeps_boundary_when_native_present(migration):
+def test_upgrade_skips_uuidv7_but_keeps_boundary_when_native_present(migration: ModuleType) -> None:
     # PostgreSQL 18: native pg_catalog.uuidv7() exists, so the DO block must guard
     # the CREATE FUNCTION with an IF NOT EXISTS check against pg_catalog.
     # uuidv7_boundary is still missing and has to be created unconditionally.
@@ -82,7 +86,7 @@ def test_upgrade_skips_uuidv7_but_keeps_boundary_when_native_present(migration):
     assert any("CREATE FUNCTION public.uuidv7_boundary(timestamptz)" in stmt for stmt in sql)
 
 
-def test_upgrade_is_noop_on_non_postgres(migration):
+def test_upgrade_is_noop_on_non_postgres(migration: ModuleType) -> None:
     bind = _make_bind("sqlite")
     with mock.patch.object(migration, "op") as fake_op:
         fake_op.get_bind.return_value = bind
@@ -91,7 +95,7 @@ def test_upgrade_is_noop_on_non_postgres(migration):
     fake_op.execute.assert_not_called()
 
 
-def test_downgrade_uses_if_exists_and_public_schema(migration):
+def test_downgrade_uses_if_exists_and_public_schema(migration: ModuleType) -> None:
     bind = _make_bind("postgresql")
     with mock.patch.object(migration, "op") as fake_op:
         fake_op.get_bind.return_value = bind
@@ -102,7 +106,7 @@ def test_downgrade_uses_if_exists_and_public_schema(migration):
     assert "DROP FUNCTION IF EXISTS public.uuidv7_boundary(timestamptz)" in sql
 
 
-def test_downgrade_is_noop_on_non_postgres(migration):
+def test_downgrade_is_noop_on_non_postgres(migration: ModuleType) -> None:
     bind = _make_bind("sqlite")
     with mock.patch.object(migration, "op") as fake_op:
         fake_op.get_bind.return_value = bind
