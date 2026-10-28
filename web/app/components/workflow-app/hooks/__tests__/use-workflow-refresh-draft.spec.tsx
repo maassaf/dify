@@ -1,5 +1,6 @@
 import type { AppMode } from '@dify/contracts/api/console/apps/types.gen'
 import type { ReactFlowInstance } from 'reactflow'
+import type { WorkflowDraftRefreshResult } from '../use-workflow-refresh-draft'
 import type { FetchWorkflowDraftResponse } from '@/types/workflow'
 import { act, waitFor } from '@testing-library/react'
 import { NuqsTestingAdapter } from 'nuqs/adapters/testing'
@@ -175,7 +176,7 @@ describe('useWorkflowRefreshDraft', () => {
       await expectGraph(flow, ['local-start', 'local-code'], ['local-edge'], localViewport)
 
       await act(async () => {
-        expect(await refresh.current!.handleRefreshWorkflowDraft(notUpdateCanvas)).toBe(true)
+        expect(await refresh.current!.handleRefreshWorkflowDraft(notUpdateCanvas)).toBe('refreshed')
       })
 
       expect(fetchDraft).toHaveBeenCalledWith('/apps/app-1/workflows/draft')
@@ -186,7 +187,7 @@ describe('useWorkflowRefreshDraft', () => {
         notUpdateCanvas ? localViewport : savedViewport,
       )
       expect(store.getState()).toMatchObject({
-        syncWorkflowDraftHash: 'server-hash',
+        syncWorkflowDraftHash: notUpdateCanvas ? 'local-hash' : 'server-hash',
         isSyncingWorkflowDraft: false,
         isWorkflowDataLoaded: true,
       })
@@ -198,7 +199,7 @@ describe('useWorkflowRefreshDraft', () => {
     fetchDraft.mockReturnValue(deferred.promise)
     let isCurrent = true
     const { flow, refresh, store } = setup()
-    let request!: Promise<boolean>
+    let request!: Promise<WorkflowDraftRefreshResult>
     act(() => {
       request = refresh.current!.handleRefreshWorkflowDraft(false, {
         shouldApply: () => isCurrent,
@@ -208,7 +209,7 @@ describe('useWorkflowRefreshDraft', () => {
 
     await act(async () => {
       deferred.resolve(draftResponse)
-      expect(await request).toBe(false)
+      expect(await request).toBe('superseded')
     })
 
     await expectGraph(flow, ['local-start', 'local-code'], ['local-edge'], localViewport)
@@ -225,12 +226,15 @@ describe('useWorkflowRefreshDraft', () => {
     fetchDraft.mockReturnValueOnce(first.promise).mockReturnValueOnce(second.promise)
     let firstIsCurrent = true
     const { flow, refresh, store } = setup()
-    let firstRequest!: Promise<boolean>
-    let secondRequest!: Promise<boolean>
+    let firstRequest!: Promise<WorkflowDraftRefreshResult>
+    let secondRequest!: Promise<WorkflowDraftRefreshResult>
     act(() => {
       firstRequest = refresh.current!.handleRefreshWorkflowDraft(false, {
         shouldApply: () => firstIsCurrent,
       })
+    })
+    await waitFor(() => expect(fetchDraft).toHaveBeenCalledTimes(1))
+    act(() => {
       secondRequest = refresh.current!.handleRefreshWorkflowDraft(false, {
         shouldApply: () => true,
       })
@@ -350,18 +354,18 @@ describe('useWorkflowRefreshDraft', () => {
     const deferred = createDeferred<FetchWorkflowDraftResponse>()
     fetchDraft.mockReturnValue(deferred.promise)
     const { flow, refresh, store } = setup()
-    let request!: Promise<boolean>
+    let request!: Promise<WorkflowDraftRefreshResult>
     act(() => {
       request = refresh.current!.handleRefreshWorkflowDraft()
     })
     expect(store.getState()).toMatchObject({
-      isWorkflowDataLoaded: false,
+      isWorkflowDataLoaded: true,
       isSyncingWorkflowDraft: true,
     })
 
     await act(async () => {
       deferred.reject(new Error('refresh failed'))
-      expect(await request).toBe(false)
+      expect(await request).toBe('failed')
     })
 
     expect(store.getState()).toMatchObject({
