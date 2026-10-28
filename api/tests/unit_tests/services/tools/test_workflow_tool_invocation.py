@@ -5,7 +5,6 @@ from unittest.mock import Mock
 import pytest
 from sqlalchemy.orm import Session
 
-from core.app.apps.workflow.app_generator import WorkflowAppGenerator
 from core.app.entities.app_invoke_entities import InvokeFrom
 from core.tools.__base.tool_runtime import ToolRuntime
 from core.tools.entities.common_entities import I18nObject
@@ -17,6 +16,7 @@ from models.workflow import Workflow
 from repositories.workflow.definition_repository import workflow_snapshot
 from services.tools.workflow.tool import WorkflowTool
 from services.workflow.contracts import WorkflowSnapshot
+from services.workflow.execution.adapters.workflow.app_generator import WorkflowAppGenerator
 from services.workflow.execution.ports import WorkflowRuntime
 from tests.helpers.unit.model_factories import make_account, make_app, make_workflow
 
@@ -68,7 +68,7 @@ class _GenerateCall:
     allow_human_input: bool
 
 
-def test_public_invoke_passes_explicit_session_and_uses_available_workflow_generator(
+def test_public_invoke_passes_explicit_session_and_injects_service_generator_dependencies(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     app = make_app(mode=AppMode.WORKFLOW)
@@ -80,7 +80,7 @@ def test_public_invoke_passes_explicit_session_and_uses_available_workflow_gener
     workflow_runtime: WorkflowRuntime = Mock(spec=WorkflowRuntime, execution_driver=execution_driver)
 
     def generate(
-        _generator: WorkflowAppGenerator,
+        generator: WorkflowAppGenerator,
         *,
         app_model: App,
         workflow: WorkflowSnapshot,
@@ -92,7 +92,7 @@ def test_public_invoke_passes_explicit_session_and_uses_available_workflow_gener
         pause_state_config: object | None,
         allow_human_input: bool,
     ) -> dict[str, object]:
-        generators.append(_generator)
+        generators.append(generator)
         calls.append(
             _GenerateCall(
                 app_model=app_model,
@@ -160,7 +160,9 @@ def test_public_invoke_passes_explicit_session_and_uses_available_workflow_gener
         )
     ]
     assert len(generators) == 1
+    assert generators[0]._runtime is workflow_runtime
     assert generators[0]._execution_driver is execution_driver
+    assert generators[0].draft_variable_saver is None
     assert [message.type for message in messages] == [
         ToolInvokeMessage.MessageType.VARIABLE,
         ToolInvokeMessage.MessageType.TEXT,
