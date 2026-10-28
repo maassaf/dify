@@ -423,7 +423,9 @@ class TestApiTokenServiceCases:
             assert args[0] in {"SET", "SETEX", "EVALSHA"}
             return True
 
-        with Redis[bytes]() as client:
+        # Annotate, do not subscript: `Redis` is not a generic class at runtime.
+        client: Redis[bytes] = Redis()
+        with client:
             monkeypatch.setattr(client, "execute_command", execute)
             wrapper = RedisClientWrapper()
             wrapper.initialize(client)
