@@ -15,7 +15,7 @@ class TestOperationService:
     @patch("httpx.request")
     def test_should_call_with_correct_parameters_when__send_request_invoked(
         self, mock_request: MagicMock, monkeypatch: pytest.MonkeyPatch
-    ):
+    ) -> None:
         """Test that _send_request calls httpx.request with the correct URL, headers, and data"""
         # Arrange
         monkeypatch.setattr(OperationService, "base_url", "https://billing.example")
@@ -49,7 +49,7 @@ class TestOperationService:
     @patch("httpx.request")
     def test_should_propagate_httpx_error_when__send_request_raises(
         self, mock_request: MagicMock, monkeypatch: pytest.MonkeyPatch
-    ):
+    ) -> None:
         """Test that _send_request handles httpx raising an error"""
         # Arrange
         monkeypatch.setattr(OperationService, "base_url", "https://billing.example")
@@ -108,14 +108,14 @@ class TestOperationService:
     @patch.object(OperationService, "_send_request")
     def test_should_map_parameters_correctly_when_record_utm_called(
         self, mock_send: MagicMock, utm_info: dict[str, Any], expected_params: dict[str, Any]
-    ):
+    ) -> None:
         """Test that record_utm correctly maps utm_info to parameters and calls _send_request"""
         # Arrange
         tenant_id = "tenant-123"
         mock_send.return_value = {"status": "recorded"}
 
         # Act
-        result = OperationService.record_utm(tenant_id, utm_info)
+        result = OperationService.record_utm(tenant_id, utm_info)  # pyrefly: ignore[bad-argument-type]
 
         # Assert
         assert result == {"status": "recorded"}
