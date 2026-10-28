@@ -514,6 +514,7 @@ class TestWorkflowRunApiCases:
     @pytest.fixture
     def workflow_run_service(sqlite_session_factory: sessionmaker[Session]) -> WorkflowRunService:
         return WorkflowRunService(
+            session_factory=sqlite_session_factory,
             workflow_runs=DifyAPISQLAlchemyWorkflowRunRepository(sqlite_session_factory),
             node_executions=DifyAPISQLAlchemyWorkflowNodeExecutionRepository(sqlite_session_factory),
         )

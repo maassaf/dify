@@ -7,12 +7,14 @@ import { WORKFLOW_COMMON_NODES } from '@/app/components/workflow/constants/node'
 import { isChatflowAtom } from '@/app/components/workflow/editor-resource/state'
 import AnswerDefault from '@/app/components/workflow/nodes/answer/default'
 import EndDefault from '@/app/components/workflow/nodes/end/default'
+import HumanInputDefault from '@/app/components/workflow/nodes/human-input/default'
 import StartPlaceholderDefault from '@/app/components/workflow/nodes/start-placeholder/default'
 import StartDefault from '@/app/components/workflow/nodes/start/default'
 import TriggerPluginDefault from '@/app/components/workflow/nodes/trigger-plugin/default'
 import TriggerScheduleDefault from '@/app/components/workflow/nodes/trigger-schedule/default'
 import TriggerWebhookDefault from '@/app/components/workflow/nodes/trigger-webhook/default'
 import { BlockEnum } from '@/app/components/workflow/types'
+import { getNodePersistedType } from '@/app/components/workflow/utils/node'
 import { useDocLink } from '@/context/i18n'
 import { isAgentV2Enabled, isAgentV2InChatflowEnabled } from '@/features/agent-v2/feature-flag'
 import { knowledgeFsEnabledAtom } from '@/features/knowledge-fs-availability/state'
@@ -70,8 +72,10 @@ export const useWorkflowNodeCatalog = () => {
     () =>
       mergedNodesMetaData.map((node) => {
         const { metaData } = node
-        const title = t(($) => $[`blocks.${metaData.type}`], { ns: 'workflow' })
-        const description = t(($) => $[`blocksAbout.${metaData.type}`], { ns: 'workflow' })
+        const titleKey =
+          metaData.type === BlockEnum.HumanInputV2 ? BlockEnum.HumanInput : metaData.type
+        const title = t(($) => $[`blocks.${titleKey}`], { ns: 'workflow' })
+        const description = t(($) => $[`blocksAbout.${titleKey}`], { ns: 'workflow' })
         const helpLinkPath = getNodeHelpLinkPath(metaData.helpLinkUri)
         return {
           ...node,
@@ -83,7 +87,7 @@ export const useWorkflowNodeCatalog = () => {
           },
           defaultValue: {
             ...node.defaultValue,
-            type: metaData.type === BlockEnum.AgentV2 ? BlockEnum.Agent : metaData.type,
+            type: getNodePersistedType(metaData.type),
             title,
           },
         }
@@ -91,12 +95,30 @@ export const useWorkflowNodeCatalog = () => {
     [mergedNodesMetaData, t, docLink],
   )
 
+  const legacyHumanInputMetaData = useMemo(() => {
+    const { metaData } = HumanInputDefault
+    const title = t(($) => $[`blocks.${BlockEnum.HumanInput}`], { ns: 'workflow' })
+    const description = t(($) => $[`blocksAbout.${BlockEnum.HumanInput}`], { ns: 'workflow' })
+
+    return {
+      ...HumanInputDefault,
+      metaData: { ...metaData, title, description },
+      defaultValue: {
+        ...HumanInputDefault.defaultValue,
+        type: BlockEnum.HumanInput,
+        title,
+      },
+    }
+  }, [t])
+
   const availableNodesMetaData = useMemo(
     () =>
-      nodesMetaData.filter((node) =>
-        shouldUseAgentV2
-          ? node.metaData.type !== BlockEnum.Agent
-          : node.metaData.type !== BlockEnum.AgentV2,
+      nodesMetaData.filter(
+        (node) =>
+          node.metaData.type !== BlockEnum.HumanInput &&
+          (shouldUseAgentV2
+            ? node.metaData.type !== BlockEnum.Agent
+            : node.metaData.type !== BlockEnum.AgentV2),
       ),
     [nodesMetaData, shouldUseAgentV2],
   )
@@ -108,9 +130,11 @@ export const useWorkflowNodeCatalog = () => {
           acc![node.metaData.type] = node
           return acc
         },
-        {} as AvailableNodesMetaData['nodesMap'],
+        {
+          [BlockEnum.HumanInput]: legacyHumanInputMetaData,
+        } as unknown as AvailableNodesMetaData['nodesMap'],
       ),
-    [nodesMetaData],
+    [nodesMetaData, legacyHumanInputMetaData],
   )
 
   return useMemo(

@@ -55,6 +55,7 @@ import { website } from './website/orpc.gen.ts'
 import { workflowGenerate } from './workflow-generate/orpc.gen.ts'
 import { workflowRunArchives } from './workflow-run-archives/orpc.gen.ts'
 import { workflow } from './workflow/orpc.gen.ts'
+import { workspace } from './workspace/orpc.gen.ts'
 import { workspaces } from './workspaces/orpc.gen.ts'
 
 const communityContract = {
@@ -112,6 +113,7 @@ const communityContract = {
   workflow,
   workflowGenerate,
   workflowRunArchives,
+  workspace,
   workspaces,
 }
 

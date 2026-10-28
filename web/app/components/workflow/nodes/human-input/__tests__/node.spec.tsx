@@ -64,10 +64,24 @@ describe('human-input/node', () => {
     expect(screen.getByText('email')).toBeInTheDocument()
     expect(screen.getByText('approve')).toBeInTheDocument()
     expect(screen.getByText('reject')).toBeInTheDocument()
-    expect(screen.getByText('Timeout')).toBeInTheDocument()
+    expect(screen.getByText('workflow.nodes.humanInput.timeout.title')).toBeInTheDocument()
     expect(screen.getByText('handle:approve')).toBeInTheDocument()
     expect(screen.getByText('handle:reject')).toBeInTheDocument()
     expect(screen.getByText('handle:__timeout')).toBeInTheDocument()
+    expect(screen.getByText('workflow.nodes.humanInputMigration.oldVersion')).toBeInTheDocument()
+  })
+
+  it('does not show the old-version badge for exact v2 data', () => {
+    render(
+      <Node
+        id="human-input-node"
+        data={createData({ version: '2' } as unknown as Partial<HumanInputNodeType>)}
+      />,
+    )
+
+    expect(
+      screen.queryByText('workflow.nodes.humanInputMigration.oldVersion'),
+    ).not.toBeInTheDocument()
   })
 
   it('keeps the timeout handle when delivery methods and actions are empty', () => {
@@ -84,7 +98,7 @@ describe('human-input/node', () => {
     expect(
       screen.queryByText('workflowHumanInput.nodes.humanInput.deliveryMethod.title'),
     ).not.toBeInTheDocument()
-    expect(screen.getByText('Timeout')).toBeInTheDocument()
+    expect(screen.getByText('workflow.nodes.humanInput.timeout.title')).toBeInTheDocument()
     expect(screen.getByText('handle:__timeout')).toBeInTheDocument()
   })
 })

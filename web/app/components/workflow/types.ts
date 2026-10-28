@@ -54,6 +54,7 @@ export const BlockEnum = {
   LoopStart: 'loop-start',
   LoopEnd: 'loop-end',
   HumanInput: 'human-input',
+  HumanInputV2: 'human-input-v2',
   DataSource: 'datasource',
   DataSourceEmpty: 'datasource-empty',
   KnowledgeBase: 'knowledge-index',

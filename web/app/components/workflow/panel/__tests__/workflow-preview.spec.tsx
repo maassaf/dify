@@ -197,10 +197,14 @@ it('opens pending human input on pause and submits the token with the entered re
   await user.type(screen.getByRole('textbox', { name: 'reason' }), 'Looks good')
   await user.click(screen.getByRole('button', { name: 'Approve' }))
   await waitFor(() =>
-    expect(mockSubmitHumanInputForm).toHaveBeenCalledWith('token-1', {
-      inputs: { reason: 'Looks good' },
-      action: 'approve',
-    }),
+    expect(mockSubmitHumanInputForm).toHaveBeenCalledWith(
+      'token-1',
+      {
+        inputs: { reason: 'Looks good' },
+        action: 'approve',
+      },
+      undefined,
+    ),
   )
 })
 

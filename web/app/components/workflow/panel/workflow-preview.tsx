@@ -101,9 +101,10 @@ const WorkflowPreview = () => {
 
   const handleSubmitHumanInputForm = useCallback(
     async (formToken: string, formData: HumanInputFormSubmitData) => {
-      await submitHumanInputForm(formToken, formData)
+      const form = humanInputFormDataList?.find((item) => item.form_token === formToken)
+      await submitHumanInputForm(formToken, formData, form?.form_version)
     },
-    [],
+    [humanInputFormDataList],
   )
 
   const handleOpenTracingTab = useCallback(() => {

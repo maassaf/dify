@@ -7,7 +7,9 @@ import { useMemo } from 'react'
 import { Trans, useTranslation } from 'react-i18next'
 import StatusContainer from '@/app/components/workflow/run/status-container'
 import { useDocLink } from '@/context/i18n'
+import { resolveConsoleHumanInputFormURL } from '@/features/console-human-input-form/links'
 import { consoleQuery } from '@/service/console'
+import { basePath } from '@/utils/var'
 
 type ResultProps = {
   status: string
@@ -61,7 +63,9 @@ const StatusPanel: FC<ResultProps> = ({
     if (hasHumanInputNode) {
       paused_nodes.forEach((node) => {
         if (node.pause_type.type === 'human_input' && node.pause_type.backstage_input_url) {
-          inputURLs.push(node.pause_type.backstage_input_url)
+          inputURLs.push(
+            resolveConsoleHumanInputFormURL(node.pause_type.backstage_input_url, basePath),
+          )
         }
       })
     }

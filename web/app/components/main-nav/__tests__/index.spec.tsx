@@ -453,6 +453,7 @@ describe('MainNav', () => {
       '/apps',
       '/agents',
       '/datasets',
+      '/contacts',
       '/skills',
       '/integrations/model-provider',
       '/marketplace',
@@ -571,6 +572,7 @@ describe('MainNav', () => {
       'href',
       '/datasets',
     )
+    expect(screen.queryByRole('link', { name: /contacts.directory.title/ })).not.toBeInTheDocument()
     expect(screen.getByRole('link', { name: /navigation.mainNav.integrations/ })).toHaveAttribute(
       'href',
       '/integrations/model-provider',
@@ -603,6 +605,7 @@ describe('MainNav', () => {
     expect(screen.getByRole('link', { name: /navigation.menus.apps/ })).toBeInTheDocument()
     expect(screen.getByRole('link', { name: /Agents/ })).toBeInTheDocument()
     expect(screen.getByRole('link', { name: /navigation.menus.datasets/ })).toBeInTheDocument()
+    expect(screen.queryByRole('link', { name: /contacts.directory.title/ })).not.toBeInTheDocument()
     expect(
       screen.getByRole('link', { name: /navigation.mainNav.integrations/ }),
     ).toBeInTheDocument()

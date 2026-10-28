@@ -161,6 +161,13 @@ export const zHumanInputFormPreviewSubmitPayload = z.object({
 export const zHumanInputFormSubmitResponse = z.record(z.string(), z.unknown())
 
 /**
+ * MessageTemplateTestResponse
+ *
+ * Response body returned after one message-template test send.
+ */
+export const zMessageTemplateTestResponse = z.record(z.string(), z.unknown())
+
+/**
  * IterationNodeRunPayload
  */
 export const zIterationNodeRunPayload = z.object({
@@ -1661,6 +1668,33 @@ export const zRecentAppListResponse = z.object({
   data: z.array(zRecentAppResponse),
 })
 
+/**
+ * DebugChannel
+ *
+ * Delivery selection for editor debugging, resolved to current channel configuration.
+ */
+export const zDebugChannel = z.enum([
+  'ding_talk',
+  'email',
+  'feishu',
+  'lark',
+  'ms_teams',
+  'slack',
+  'we_com',
+])
+
+export const zJsonValue = z.unknown()
+
+/**
+ * MessageTemplateTestRequest
+ *
+ * Request body for sending one message-template test notification.
+ */
+export const zMessageTemplateTestRequest = z.object({
+  channel: zDebugChannel,
+  inputs: z.record(z.string(), zJsonValue).optional(),
+})
+
 export const zShallowJsonValue = z
   .union([
     z.string(),
@@ -2980,6 +3014,32 @@ export const zAppAnnotationReplyDisabledResponse = z.object({
 })
 
 /**
+ * AppEnabledExternalDataToolResponse
+ */
+export const zAppEnabledExternalDataToolResponse = z.object({
+  config: z.record(z.string(), zJsonValue),
+  enabled: z.literal(true),
+  icon: z.string().optional(),
+  icon_background: z.string().optional(),
+  label: z.string().optional(),
+  type: z.string(),
+  variable: z.string(),
+})
+
+/**
+ * AppDisabledExternalDataToolResponse
+ */
+export const zAppDisabledExternalDataToolResponse = z.object({
+  config: z.record(z.string(), zJsonValue).optional(),
+  enabled: z.literal(false),
+  icon: z.string().optional(),
+  icon_background: z.string().optional(),
+  label: z.string().optional(),
+  type: z.string().optional(),
+  variable: z.string().optional(),
+})
+
+/**
  * AppEnabledConfigResponse
  */
 export const zAppEnabledConfigResponse = z.object({
@@ -2992,6 +3052,16 @@ export const zAppEnabledConfigResponse = z.object({
  * Prompt configuration type
  */
 export const zPromptType = z.enum(['advanced', 'simple'])
+
+/**
+ * AppSensitiveWordAvoidanceResponse
+ */
+export const zAppSensitiveWordAvoidanceResponse = z.object({
+  config: z.record(z.string(), zJsonValue).optional(),
+  configs: z.array(zJsonValue).optional(),
+  enabled: z.boolean(),
+  type: z.string().optional(),
+})
 
 /**
  * AppTextToSpeechResponse
@@ -3302,6 +3372,18 @@ export const zFeedback = z.object({
   from_end_user_id: z.string().nullish(),
   from_source: z.string(),
   rating: z.string(),
+})
+
+/**
+ * HumanInputFormSubmissionData
+ */
+export const zHumanInputFormSubmissionData = z.object({
+  action_id: z.string(),
+  action_text: z.string(),
+  node_id: z.string(),
+  node_title: z.string(),
+  rendered_content: z.string(),
+  submitted_data: z.record(z.string(), zJsonValue).nullish(),
 })
 
 /**
@@ -4013,6 +4095,34 @@ export const zAppAgentPromptResponse = z.object({
 })
 
 /**
+ * AppLegacyGoogleSearchToolResponse
+ */
+export const zAppLegacyGoogleSearchToolResponse = z.object({
+  google_search: z.record(z.string(), zJsonValue),
+})
+
+/**
+ * AppLegacyWebReaderToolResponse
+ */
+export const zAppLegacyWebReaderToolResponse = z.object({
+  web_reader: z.record(z.string(), zJsonValue),
+})
+
+/**
+ * AppLegacyWikipediaToolResponse
+ */
+export const zAppLegacyWikipediaToolResponse = z.object({
+  wikipedia: z.record(z.string(), zJsonValue),
+})
+
+/**
+ * AppLegacyCurrentDatetimeToolResponse
+ */
+export const zAppLegacyCurrentDatetimeToolResponse = z.object({
+  current_datetime: z.record(z.string(), zJsonValue),
+})
+
+/**
  * AppEmbeddingModelResponse
  */
 export const zAppEmbeddingModelResponse = z.object({
@@ -4074,84 +4184,6 @@ export const zAppCompletionPromptConfigResponse = z.object({
 export const zAppRerankingModelResponse = z.object({
   reranking_model_name: z.string().optional(),
   reranking_provider_name: z.string().optional(),
-})
-
-export const zJsonValue = z.unknown()
-
-/**
- * AppEnabledExternalDataToolResponse
- */
-export const zAppEnabledExternalDataToolResponse = z.object({
-  config: z.record(z.string(), zJsonValue),
-  enabled: z.literal(true),
-  icon: z.string().optional(),
-  icon_background: z.string().optional(),
-  label: z.string().optional(),
-  type: z.string(),
-  variable: z.string(),
-})
-
-/**
- * AppDisabledExternalDataToolResponse
- */
-export const zAppDisabledExternalDataToolResponse = z.object({
-  config: z.record(z.string(), zJsonValue).optional(),
-  enabled: z.literal(false),
-  icon: z.string().optional(),
-  icon_background: z.string().optional(),
-  label: z.string().optional(),
-  type: z.string().optional(),
-  variable: z.string().optional(),
-})
-
-/**
- * AppSensitiveWordAvoidanceResponse
- */
-export const zAppSensitiveWordAvoidanceResponse = z.object({
-  config: z.record(z.string(), zJsonValue).optional(),
-  configs: z.array(zJsonValue).optional(),
-  enabled: z.boolean(),
-  type: z.string().optional(),
-})
-
-/**
- * HumanInputFormSubmissionData
- */
-export const zHumanInputFormSubmissionData = z.object({
-  action_id: z.string(),
-  action_text: z.string(),
-  node_id: z.string(),
-  node_title: z.string(),
-  rendered_content: z.string(),
-  submitted_data: z.record(z.string(), zJsonValue).nullish(),
-})
-
-/**
- * AppLegacyGoogleSearchToolResponse
- */
-export const zAppLegacyGoogleSearchToolResponse = z.object({
-  google_search: z.record(z.string(), zJsonValue),
-})
-
-/**
- * AppLegacyWebReaderToolResponse
- */
-export const zAppLegacyWebReaderToolResponse = z.object({
-  web_reader: z.record(z.string(), zJsonValue),
-})
-
-/**
- * AppLegacyWikipediaToolResponse
- */
-export const zAppLegacyWikipediaToolResponse = z.object({
-  wikipedia: z.record(z.string(), zJsonValue),
-})
-
-/**
- * AppLegacyCurrentDatetimeToolResponse
- */
-export const zAppLegacyCurrentDatetimeToolResponse = z.object({
-  current_datetime: z.record(z.string(), zJsonValue),
 })
 
 /**
@@ -5443,6 +5475,7 @@ export const zHumanInputFormDefinition = z.object({
   form_content: z.string(),
   form_id: z.string(),
   form_token: z.string().nullish(),
+  form_version: z.enum(['1', '2']).optional().default('1'),
   inputs: z.array(zFormInputConfig).optional(),
   node_id: z.string(),
   node_title: z.string(),
@@ -6138,6 +6171,13 @@ export const zComposerSavePayload = z.object({
 })
 
 /**
+ * MessageTemplateTestResponse
+ *
+ * Response body returned after one message-template test send.
+ */
+export const zMessageTemplateTestResponseWritable = z.record(z.string(), z.unknown())
+
+/**
  * GeneratedAppResponse
  */
 export const zGeneratedAppResponseWritable = zShallowJsonValue
@@ -6604,6 +6644,21 @@ export const zPostAppsByAppIdAdvancedChatWorkflowsDraftHumanInputNodesByNodeIdFo
  */
 export const zPostAppsByAppIdAdvancedChatWorkflowsDraftHumanInputNodesByNodeIdFormRunResponse =
   zHumanInputFormSubmitResponse
+
+export const zPostAppsByAppIdAdvancedChatWorkflowsDraftHumanInputNodesByNodeIdMessageTemplateTestBody =
+  zMessageTemplateTestRequest
+
+export const zPostAppsByAppIdAdvancedChatWorkflowsDraftHumanInputNodesByNodeIdMessageTemplateTestPath =
+  z.object({
+    app_id: z.uuid(),
+    node_id: z.string(),
+  })
+
+/**
+ * Success
+ */
+export const zPostAppsByAppIdAdvancedChatWorkflowsDraftHumanInputNodesByNodeIdMessageTemplateTestResponse =
+  zMessageTemplateTestResponse
 
 export const zPostAppsByAppIdAdvancedChatWorkflowsDraftIterationNodesByNodeIdRunBody =
   zIterationNodeRunPayload
@@ -8191,6 +8246,21 @@ export const zPostAppsByAppIdWorkflowsDraftHumanInputNodesByNodeIdFormRunPath = 
  */
 export const zPostAppsByAppIdWorkflowsDraftHumanInputNodesByNodeIdFormRunResponse =
   zHumanInputFormSubmitResponse
+
+export const zPostAppsByAppIdWorkflowsDraftHumanInputNodesByNodeIdMessageTemplateTestBody =
+  zMessageTemplateTestRequest
+
+export const zPostAppsByAppIdWorkflowsDraftHumanInputNodesByNodeIdMessageTemplateTestPath =
+  z.object({
+    app_id: z.uuid(),
+    node_id: z.string(),
+  })
+
+/**
+ * Success
+ */
+export const zPostAppsByAppIdWorkflowsDraftHumanInputNodesByNodeIdMessageTemplateTestResponse =
+  zMessageTemplateTestResponse
 
 export const zPostAppsByAppIdWorkflowsDraftIterationNodesByNodeIdRunBody = zIterationNodeRunPayload
 
